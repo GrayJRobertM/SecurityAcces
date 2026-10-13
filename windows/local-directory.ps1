@@ -66,8 +66,8 @@ try {
         }
         {$_ -in 'reset','enable','disable','unlock','update'} {
             $user=Scoped $request.identifier
-            $stage='dispatch'
-    switch ($request.action) {
+            $stage='modify'
+            switch ($request.action) {
                 'reset' {$secure=ConvertTo-SecureString -String $request.password -AsPlainText -Force;Set-LocalUser -SID $user.SID -Password $secure -ErrorAction Stop}
                 'enable' {Enable-LocalUser -SID $user.SID -ErrorAction Stop}
                 'disable' {Disable-LocalUser -SID $user.SID -ErrorAction Stop}
@@ -83,7 +83,7 @@ try {
     }
     @{ok=$true;data=$data} | ConvertTo-Json -Depth 6 -Compress
 } catch {
-    @{ok=$false;error='LOCAL_OPERATION_FAILED';stage=$stage;category=[string]$_.CategoryInfo.Category;exception=$_.Exception.GetType().FullName} | ConvertTo-Json -Compress
+    @{ok=$false;error='LOCAL_OPERATION_FAILED';stage=$stage;category=[string]$_.CategoryInfo.Category;exception=$_.Exception.GetType().FullName;line=$_.InvocationInfo.ScriptLineNumber} | ConvertTo-Json -Compress
     exit 1
 } finally {
     if ($secure) {$secure.Dispose()}
