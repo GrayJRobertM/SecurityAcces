@@ -1,0 +1,8 @@
+IP Geolocation by DB-IP
+https://db-ip.com
+DB-IP City Lite, October 2026. Approximate IP locations, reduced coverage and accuracy.
+Licensed under Creative Commons Attribution 4.0 International:
+https://creativecommons.org/licenses/by/4.0/
+https://db-ip.com/db/download/ip-to-city-lite
+The original MMDB dataset is bundled without modifications; its checksums are in source.json.
+The application reads this local database. No usernames or observed IP addresses are sent to DB-IP.

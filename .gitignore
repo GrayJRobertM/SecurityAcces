@@ -3,3 +3,11 @@ data/
 __pycache__/
 *.pyc
 .env
+build/
+dist/
+build-tools/
+*.dpapi
+*.sqlite3
+.DS_Store
+geodata/*.mmdb
+geodata/*.gz

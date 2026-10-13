@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from storage import connection
 import tempfile
 import time
 import unittest
@@ -18,7 +19,7 @@ class TelemetryTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.app=create_app({'TESTING':True,'DATA_DIR':self.temp.name,'MODE':'demo'})
-        with sqlite3.connect(self.app.db_path) as db:db.execute('INSERT INTO admin VALUES(1,?)',(self.password_hash,))
+        with connection(self.app.db_path) as db:db.execute('INSERT INTO admin VALUES(1,?)',(self.password_hash,))
         self.client=self.app.test_client()
         csrf=self.client.get('/api/session').json['csrf']
         result=self.client.post('/api/login',json={'username':'admin','password':self.password},headers={'X-CSRF-Token':csrf})
@@ -49,7 +50,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(self.send([self.event()],https=False).status_code,403)
         self.assertEqual(self.send([dict(self.event(),server='other.example.test')]).status_code,400)
         self.assertEqual(self.send([self.event()]).status_code,200)
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             self.assertEqual(db.execute("SELECT server FROM windows_events WHERE source='windows'").fetchone()[0],self.server)
     def test_idempotency_and_log_generations(self):
         self.real()
@@ -91,7 +92,7 @@ class TelemetryTests(unittest.TestCase):
         data=self.dashboard('?days=90').json
         self.assertEqual(data['totals']['success'],0)
         self.assertIsNotNone(data['collectors'][0]['last_gap'])
-        with sqlite3.connect(self.app.db_path) as db:self.assertEqual(db.execute("SELECT COUNT(*) FROM windows_events WHERE source='windows'").fetchone()[0],0)
+        with connection(self.app.db_path) as db:self.assertEqual(db.execute("SELECT COUNT(*) FROM windows_events WHERE source='windows'").fetchone()[0],0)
     def test_filters_batch_limits_and_key_privacy(self):
         self.real();self.send([self.event()])
         self.assertEqual(self.dashboard('?server=other.example.test').json['totals']['success'],0)
@@ -110,7 +111,7 @@ class TelemetryTests(unittest.TestCase):
     def test_local_calendar_bucket(self):
         self.real()
         self.send([self.event()])
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             db.row_factory=sqlite3.Row
             data=metrics(db,{'days':'7','offset':'-360'},'ad')
         self.assertEqual(sum(r['success'] for r in data['daily']),1)

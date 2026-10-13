@@ -9,6 +9,23 @@ try {
     $ou = [string]$request.ou
     $base = Get-ADOrganizationalUnit -Identity $ou -Server $server
     $common = @{ Server = $server; ErrorAction = 'Stop' }
+    function Get-ScopedUser($identifier) {
+        $found=Get-ADUser -Identity ([Guid]$identifier) -Properties adminCount @common
+        if (-not $found.DistinguishedName.EndsWith(','+$base.DistinguishedName,[StringComparison]::OrdinalIgnoreCase) -or $found.adminCount -eq 1) { throw 'Outside delegated scope' }
+        return $found
+    }
+    function Read-PasswordStamp($user) {
+        try {
+            $meta=Get-ADReplicationAttributeMetadata -Object $user.DistinguishedName -Server $server -Properties pwdLastSet -ErrorAction Stop | Select-Object -First 1
+            if (-not $meta.Version -or -not $meta.LastOriginatingChangeUsn -or -not $meta.LastOriginatingChangeDirectoryServerInvocationId) { return '' }
+            return "$($meta.Version):$($meta.LastOriginatingChangeUsn):$($meta.LastOriginatingChangeDirectoryServerInvocationId)"
+        } catch { return '' }
+    }
+    function Password-Result($user) {
+        $domainGuid=''
+        try {$domainGuid=(Get-ADDomain @common).ObjectGUID.ToString()} catch {}
+        return @{id=$user.ObjectGUID.ToString();username=$user.SamAccountName;domain_guid=$domainGuid;stamp=(Read-PasswordStamp $user)}
+    }
     switch ($request.action) {
         'list' {
             $items = @(Get-ADUser -Filter * -SearchBase $base.DistinguishedName -SearchScope Subtree -Properties DisplayName,Department,Enabled,LockedOut @common | ForEach-Object {
@@ -19,10 +36,22 @@ try {
         'create' {
             if ([string]$request.username -notmatch '^[a-zA-Z0-9._-]{1,20}$' -or -not $request.upnSuffix) { throw 'Invalid configuration' }
             $secure = ConvertTo-SecureString -String $request.password -AsPlainText -Force
-            $user = New-ADUser -Name $request.name -DisplayName $request.name -SamAccountName $request.username -UserPrincipalName "$($request.username)@$($request.upnSuffix)" -Department $request.department -Path $base.DistinguishedName -AccountPassword $secure -ChangePasswordAtLogon $true -Enabled $true -PassThru @common
-            $data = @{ id=$user.ObjectGUID.ToString() }
+            $enabled=if ($request.PSObject.Properties.Name -contains 'enabled') {[bool]$request.enabled} else {$true}
+            $attributes=@{Name=$request.name;DisplayName=$request.name;SamAccountName=$request.username;UserPrincipalName="$($request.username)@$($request.upnSuffix)";Path=$base.DistinguishedName;AccountPassword=$secure;ChangePasswordAtLogon=$true;Enabled=$enabled;PassThru=$true}
+            if ($request.department) {$attributes.Department=$request.department}
+            $user=New-ADUser @attributes @common
+            $data=Password-Result $user
         }
-        { $_ -in 'reset','enable','disable','unlock' } {
+        'stamps' {
+            $domain=Get-ADDomain @common
+            $items=@()
+            foreach ($identifier in @($request.identifiers)) {
+                try {$user=Get-ScopedUser $identifier;$items+=@{id=$user.ObjectGUID.ToString();stamp=(Read-PasswordStamp $user)}}
+                catch {$items+=@{id=[string]$identifier;stamp=''}}
+            }
+            $data=@{domain_guid=$domain.ObjectGUID.ToString();users=@($items)}
+        }
+        { $_ -in 'reset','enable','disable','unlock','update' } {
             $user = Get-ADUser -Identity ([Guid]$request.identifier) -Properties adminCount @common
             # Resolve GUID first, then restrict actions to the configured OU subtree.
             if (-not $user.DistinguishedName.EndsWith(','+$base.DistinguishedName,[StringComparison]::OrdinalIgnoreCase) -or $user.adminCount -eq 1) { throw 'Outside delegated scope' }
@@ -35,8 +64,14 @@ try {
                 'enable' { Enable-ADAccount -Identity $user @common }
                 'disable' { Disable-ADAccount -Identity $user @common }
                 'unlock' { Unlock-ADAccount -Identity $user @common }
+                'update' {
+                    Set-ADUser -Identity $user -DisplayName $request.name @common
+                    if ($request.department) {Set-ADUser -Identity $user -Department $request.department @common}
+                    else {Set-ADUser -Identity $user -Clear Department @common}
+                    if ($request.enabled) {Enable-ADAccount -Identity $user @common} else {Disable-ADAccount -Identity $user @common}
+                }
             }
-            $data = @{ id=$user.ObjectGUID.ToString() }
+            $data=if ($request.action -eq 'reset') {Password-Result $user} else {@{id=$user.ObjectGUID.ToString()}}
         }
         default { throw 'Unsupported action' }
     }

@@ -1,4 +1,4 @@
-"""Freshkampo Access: local demo and Windows AD adapter."""
+"""Metakampo Access: local demo and Windows AD adapter."""
 import argparse
 import base64
 import getpass
@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import sqlite3
+from storage import connection
 import time
 import uuid
 from datetime import timedelta
@@ -22,6 +23,8 @@ from security import generate_password, fingerprint, seal, unseal, CATEGORIES
 from rdp import RDPError, make_package, validate_connection, portal_url, configured as rdp_configured
 
 from telemetry import install as install_telemetry, register as register_telemetry
+from access_map import register as register_access_map
+from user_sync import install as install_user_sync, register as register_user_sync, remember as remember_user_password
 
 BASE = Path(__file__).parent
 
@@ -54,7 +57,7 @@ def create_app(overrides=None):
     app.secret_key = hashlib.sha256(b'fk-session\x00' + key).digest()
     app.config['VAULT_KEY'] = key
     database = folder / 'access.sqlite3'
-    with sqlite3.connect(database) as db:
+    with connection(database) as db:
         db.executescript('''
         CREATE TABLE IF NOT EXISTS admin (id INTEGER PRIMARY KEY CHECK(id=1), hash TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires REAL NOT NULL);
@@ -73,6 +76,7 @@ def create_app(overrides=None):
                 ('Ana García','ana.garcia','Operaciones',1), ('Luis Mendoza','luis.mendoza','Comercial',0),
                 ('Sofía Ramírez','sofia.ramirez','Recursos Humanos',1), ('Carlos Vega','carlos.vega','Logística',1)]])
     install_telemetry(database,app.config['MODE'])
+    install_user_sync(database)
     if os.name != 'nt':
         database.chmod(0o600)
     attempts = {}
@@ -122,6 +126,10 @@ def create_app(overrides=None):
 
     @app.before_request
     def protect():
+        if request.path=='/api/user-sync/preview':
+            request.max_content_length=2*1048576
+        if app.config.get('DESKTOP') and request.path.startswith(('/api/telemetry/events','/api/collectors','/api/rdp/redeem')):
+            return jsonify(error='Esta instalación solo admite operación local.'),403
         if request.path == '/api/telemetry/events' and request.method == 'POST':
             request.max_content_length=1048576
             return None  # Dedicated per-server collector credentials, validated in endpoint.
@@ -176,7 +184,7 @@ def create_app(overrides=None):
     @app.get('/api/session')
     def status():
         row = db().execute('SELECT expires FROM sessions WHERE token=?', (session.get('auth',''),)).fetchone()
-        return jsonify(csrf=session['csrf'], authenticated=bool(row and row[0]>time.time()), mode=app.config['MODE'],
+        return jsonify(csrf=session['csrf'], authenticated=bool(row and row[0]>time.time()), mode=app.config['MODE'], desktop=bool(app.config.get('DESKTOP')),
                        setup=bool(db().execute('SELECT 1 FROM admin').fetchone()))
 
     @app.post('/api/login')
@@ -220,9 +228,13 @@ def create_app(overrides=None):
             raise ValueError('El usuario admite letras, números, punto, guion y guion bajo; máximo 20 caracteres.')
         password = fresh_password()
         if app.config['MODE']=='ad':
-            call_ad('create', name=name, username=username, department=department, password=password)
+            result=call_ad('create', name=name, username=username, department=department, password=password)
+            if result and result.get('id'):
+                remember_user_password(db(),key,result['id'],username,password,result.get('domain_guid',''),result.get('stamp',''))
         else:
-            db().execute('INSERT INTO users VALUES (?,?,?,?,1)',(str(uuid.uuid4()),name,username,department))
+            identifier=str(uuid.uuid4())
+            db().execute('INSERT INTO users VALUES (?,?,?,?,1)',(identifier,name,username,department))
+            remember_user_password(db(),key,identifier,username,password,db().execute('SELECT identifier FROM sync_instance').fetchone()[0],str(uuid.uuid4()))
         audit('crear usuario',username)
         return jsonify(password=password, message='Usuario creado. Debe cambiar la contraseña al iniciar sesión.'),201
 
@@ -236,10 +248,15 @@ def create_app(overrides=None):
             raise ValueError('Identificador inválido.')
         password = fresh_password() if action=='reset' else None
         if app.config['MODE']=='ad':
-            call_ad(action, identifier=identifier, **({'password':password} if password else {}))
+            result=call_ad(action, identifier=identifier, **({'password':password} if password else {}))
+            if password and result and result.get('username'):
+                remember_user_password(db(),key,identifier,result['username'],password,result.get('domain_guid',''),result.get('stamp',''))
         else:
             if not db().execute('SELECT 1 FROM users WHERE id=?',(identifier,)).fetchone():
                 return jsonify(error='Usuario no encontrado.'),404
+            if password:
+                username=db().execute('SELECT username FROM users WHERE id=?',(identifier,)).fetchone()[0]
+                remember_user_password(db(),key,identifier,username,password,db().execute('SELECT identifier FROM sync_instance').fetchone()[0],str(uuid.uuid4()))
             if action in ('enable','disable'):
                 db().execute('UPDATE users SET enabled=? WHERE id=?',(action=='enable',identifier))
         audit(action,identifier)
@@ -299,6 +316,10 @@ def create_app(overrides=None):
 
     @app.get('/api/rdp/status')
     def rdp_status():
+        if app.config.get('DESKTOP'):
+            return jsonify(demo=app.config['MODE']=='demo', desktop=True,
+                           configured=os.name=='nt' and bool(os.environ.get('FK_RDP_CERT_HASH')),
+                           message='Firma con los certificados configurados. Credenciales protegidas para este equipo y cuenta Windows.')
         return jsonify(demo=app.config['MODE']=='demo', configured=rdp_configured(), activationMinutes=30,
                        message='La firma requiere Windows, certificado RDP, certificado de firma de código y portal HTTPS.')
 
@@ -322,7 +343,7 @@ def create_app(overrides=None):
             audit('vista previa RDP',host)
             signed=False
         else:
-            if not request.is_secure:
+            if not request.is_secure and not app.config.get('DESKTOP'):
                 return jsonify(error='Genera paquetes con credenciales desde el portal HTTPS.'),403
             if throttled('rdp-export', 10):return jsonify(error='Demasiados intentos. Espera 15 minutos.'),429
             supplied=data.get('admin_password','')
@@ -334,6 +355,21 @@ def create_app(overrides=None):
             code=data.get('activation_code')
             if not isinstance(password,str) or not 1<=len(password)<=256 or '\x00' in password:
                 raise ValueError('Indica la contraseña vigente de la cuenta para RDP.')
+            if app.config.get('DESKTOP'):
+                from windows_native import dpapi, machine_identity
+                identity=machine_identity()
+                identifier=str(uuid.uuid4())
+                credentials=dpapi(json.dumps(dict(host=host,username=username,password=password)).encode())
+                configuration=dict(id=identifier,host=host,username=username,local=True,
+                                   identity=identity,credential=base64.b64encode(credentials).decode())
+                package=make_package(host,username,port,configuration=configuration)
+                db().execute('INSERT INTO rdp_clients(id,host,username,code_hash,secret,expires,consumed) VALUES (?,?,?,?,NULL,?,1)',
+                             (identifier,host,username,'local-dpapi',time.time()))
+                audit('generar cliente RDP local firmado',host)
+                response=send_file(io.BytesIO(package),mimetype='application/zip',as_attachment=True,
+                                   download_name='Metakampo-RDP-local-firmado.zip')
+                response.headers['X-RDP-Signed']='true'
+                return response
             if not isinstance(code,str) or not 15<=len(code)<=128 or code.strip()!=code or code==password or not all(any(c in group for c in code) for group in CATEGORIES):
                 raise ValueError('El código de activación debe tener 15 a 128 caracteres con mayúsculas, minúsculas, números y símbolos, sin espacios externos, y ser diferente de la contraseña RDP.')
             identifier=str(uuid.uuid4())
@@ -347,7 +383,7 @@ def create_app(overrides=None):
             audit('generar cliente RDP firmado',host)
             signed=True
         response=send_file(io.BytesIO(package),mimetype='application/zip',as_attachment=True,
-                           download_name='Freshkampo-RDP-firmado.zip' if signed else 'Freshkampo-RDP-DEMO-sin-firma.zip')
+                           download_name='Metakampo-RDP-firmado.zip' if signed else 'Metakampo-RDP-DEMO-sin-firma.zip')
         response.headers['X-RDP-Signed']='true' if signed else 'false'
         return response
 
@@ -398,6 +434,8 @@ def create_app(overrides=None):
         return jsonify(events=[dict(r) for r in db().execute('SELECT * FROM audit ORDER BY id DESC LIMIT 200')])
 
     register_telemetry(app,db,audit,throttled)
+    register_access_map(app,db)
+    register_user_sync(app,db,audit,throttled,fresh_password)
     app.db_path = database
     return app
 
@@ -412,11 +450,11 @@ if __name__=='__main__':
         first=getpass.getpass('Nueva contraseña del administrador (mínimo 15 caracteres): ')
         if len(first)<15 or first!=getpass.getpass('Confirma la contraseña: '):
             raise SystemExit('La contraseña no cumple o la confirmación no coincide.')
-        with sqlite3.connect(app.db_path) as db:
+        with connection(app.db_path) as db:
             db.execute('INSERT OR REPLACE INTO admin VALUES (1,?)',(generate_password_hash(first, method="pbkdf2:sha256:1000000"),))
             db.execute('DELETE FROM sessions')
         print('Administrador configurado. Usuario: admin')
     else:
         from waitress import serve
-        print(f'Freshkampo Access · {app.config["MODE"]} · http://127.0.0.1:{args.port}',flush=True)
+        print(f'Metakampo Access · {app.config["MODE"]} · http://127.0.0.1:{args.port}',flush=True)
         serve(app,host='127.0.0.1',port=args.port,threads=4,trusted_proxy='127.0.0.1',trusted_proxy_headers={'x-forwarded-proto','x-forwarded-for'})

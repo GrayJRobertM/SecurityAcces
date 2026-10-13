@@ -22,3 +22,36 @@
 
 - Directorio y adaptador AD; generación fuerte de 15 caracteres por defecto, bóveda cifrada y auditoría.
 - Freshkampo DS v2.1, tema Fresa, con layout adaptable y modo oscuro.
+# 1.0.0 · Aplicación independiente para Windows Server
+
+- Ventana de escritorio local con asistente de configuración, acceso exclusivo y cierre del proceso con la ventana.
+- Instalador x64 con Python y runtime WebView2 oficial incluido; no requiere portal publicado ni IIS.
+- Clave/configuración con DPAPI, binding de equipo/SID, ACL privada, bóveda AES-256-GCM y contraseña administrativa elegida en el primer inicio.
+- Lector del registro Security del servidor instalado y dashboard con recuperación de eventos disponibles hasta 90 días.
+- Clientes RDP firmados con credenciales DPAPI utilizables solo en el mismo servidor y cuenta Windows, sin activación remota.
+- Compilación, pruebas Windows, prueba de ventana WebView2, instalación y ejecutable congelado en GitHub Actions.
+- Conexión al AD real y firma con certificados empresariales requieren validación en el servidor del usuario. MFA no incluido.
+
+# 1.1.0 · Mapa de accesos
+
+- Mapa mundial local con puntos por ubicación aproximada, zoom/desplazamiento y lista accesible de ubicaciones.
+- Detalle de todas las cuentas, IPs, fechas y resultados al pulsar un punto, con paginación y filtros de cuenta/periodo/actividad.
+- DB-IP City Lite (octubre 2026) y cartografía Natural Earth incluidos para consultas offline; sin enviar IPs ni usuarios a terceros.
+- Orígenes privados/desconocidos fuera del mapa; intentos fallidos diferenciados de accesos y fallos de red diferenciados de RDP.
+- Nueve pruebas adicionales de autenticación, filtros, IPv4/IPv6, ausencia de geolocalización, agrupación y paginación.
+
+# 1.2.0 · Sincronización protegida de usuarios y contraseñas
+
+- Importación/exportación desde el directorio con confirmación administrativa, vista previa y confirmación antes de aplicar.
+- Archivo .fksync AES-256-GCM con clave de transferencia independiente; CSV reservado a atributos sin contraseñas.
+- Contraseñas generadas/aplicadas por el gestor guardadas cifradas y verificadas contra la versión de replicación de AD; claves desconocidas o desactualizadas no se exportan.
+- Sincronización local de secretos entre instancias del mismo AD sin restablecer cuando coinciden dominio, GUID y versión; archivos antiguos rechazados.
+- Lotes de hasta 500 cuentas, control de colisiones, progreso e historial de resultados; sin eliminación, ampliación de grupos ni copia de claves maestras.
+- Conserva el módulo de mapa offline de accesos.
+
+
+# 1.2.1 · Marca Metakampo
+
+- Nombre Metakampo Access en interfaz, asistente, ventanas, instalador y descargas.
+- Icono M multicolor basado en la imagen del usuario en la interfaz, favicon y ejecutable/instalador Windows.
+- Identificadores de instalación, rutas de datos y formatos cifrados conservados para actualizar sin perder compatibilidad.

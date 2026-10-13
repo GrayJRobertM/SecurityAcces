@@ -1,4 +1,8 @@
-# Freshkampo Access
+# Metakampo Access · Escritorio Windows Server
+
+La versión actual se instala como **Metakampo-Access-Setup-x64.exe** y se abre desde una ventana propia. No necesita Python ni IIS. Consulta [DESKTOP.md](DESKTOP.md) para instalar, configurar AD y utilizar las métricas locales y los clientes RDP protegidos con DPAPI. El portal anterior se conserva en la rama `main`; esta versión está en `codex/windows-desktop`.
+
+Las secciones siguientes documentan el portal original y su ejecución de desarrollo; la aplicación de escritorio utiliza el asistente y no un portal HTTPS.
 
 Primera versión funcional de un gestor propio de identidades y contraseñas, con el sistema de diseño Freshkampo v2.1 y tema **Fresa**, seleccionado por el usuario. Aplicación para instalar dentro de la organización; backend Python/Flask/Waitress, interfaz web sin frameworks y adaptador PowerShell para AD local.
 
