@@ -49,3 +49,9 @@
 - Lotes de hasta 500 cuentas, control de colisiones, progreso e historial de resultados; sin eliminación, ampliación de grupos ni copia de claves maestras.
 - Conserva el módulo de mapa offline de accesos.
 
+
+# 1.2.1 · Marca Metakampo
+
+- Nombre Metakampo Access en interfaz, asistente, ventanas, instalador y descargas.
+- Icono M multicolor basado en la imagen del usuario en la interfaz, favicon y ejecutable/instalador Windows.
+- Identificadores de instalación, rutas de datos y formatos cifrados conservados para actualizar sin perder compatibilidad.

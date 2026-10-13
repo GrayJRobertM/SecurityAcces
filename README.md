@@ -1,6 +1,6 @@
-# Freshkampo Access · Escritorio Windows Server
+# Metakampo Access · Escritorio Windows Server
 
-La versión actual se instala como **Freshkampo-Access-Setup-x64.exe** y se abre desde una ventana propia. No necesita Python ni IIS. Consulta [DESKTOP.md](DESKTOP.md) para instalar, configurar AD y utilizar las métricas locales y los clientes RDP protegidos con DPAPI. El portal anterior se conserva en la rama `main`; esta versión está en `codex/windows-desktop`.
+La versión actual se instala como **Metakampo-Access-Setup-x64.exe** y se abre desde una ventana propia. No necesita Python ni IIS. Consulta [DESKTOP.md](DESKTOP.md) para instalar, configurar AD y utilizar las métricas locales y los clientes RDP protegidos con DPAPI. El portal anterior se conserva en la rama `main`; esta versión está en `codex/windows-desktop`.
 
 Las secciones siguientes documentan el portal original y su ejecución de desarrollo; la aplicación de escritorio utiliza el asistente y no un portal HTTPS.
 

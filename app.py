@@ -1,4 +1,4 @@
-"""Freshkampo Access: local demo and Windows AD adapter."""
+"""Metakampo Access: local demo and Windows AD adapter."""
 import argparse
 import base64
 import getpass
@@ -367,7 +367,7 @@ def create_app(overrides=None):
                              (identifier,host,username,'local-dpapi',time.time()))
                 audit('generar cliente RDP local firmado',host)
                 response=send_file(io.BytesIO(package),mimetype='application/zip',as_attachment=True,
-                                   download_name='Freshkampo-RDP-local-firmado.zip')
+                                   download_name='Metakampo-RDP-local-firmado.zip')
                 response.headers['X-RDP-Signed']='true'
                 return response
             if not isinstance(code,str) or not 15<=len(code)<=128 or code.strip()!=code or code==password or not all(any(c in group for c in code) for group in CATEGORIES):
@@ -383,7 +383,7 @@ def create_app(overrides=None):
             audit('generar cliente RDP firmado',host)
             signed=True
         response=send_file(io.BytesIO(package),mimetype='application/zip',as_attachment=True,
-                           download_name='Freshkampo-RDP-firmado.zip' if signed else 'Freshkampo-RDP-DEMO-sin-firma.zip')
+                           download_name='Metakampo-RDP-firmado.zip' if signed else 'Metakampo-RDP-DEMO-sin-firma.zip')
         response.headers['X-RDP-Signed']='true' if signed else 'false'
         return response
 
@@ -456,5 +456,5 @@ if __name__=='__main__':
         print('Administrador configurado. Usuario: admin')
     else:
         from waitress import serve
-        print(f'Freshkampo Access · {app.config["MODE"]} · http://127.0.0.1:{args.port}',flush=True)
+        print(f'Metakampo Access · {app.config["MODE"]} · http://127.0.0.1:{args.port}',flush=True)
         serve(app,host='127.0.0.1',port=args.port,threads=4,trusted_proxy='127.0.0.1',trusted_proxy_headers={'x-forwarded-proto','x-forwarded-for'})

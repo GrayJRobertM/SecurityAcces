@@ -1,6 +1,6 @@
-# Freshkampo Access · Aplicación Windows Server
+# Metakampo Access · Aplicación Windows Server
 
-Versión 1.2.0, x64. Instalador: **Freshkampo-Access-Setup-x64.exe**. Aplicación instalada: **FreshkampoAccess.exe**.
+Versión 1.2.1, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
 
 ## Importar y exportar usuarios con contraseñas
 
@@ -21,10 +21,10 @@ La acción **Consultar contraseña administrada** requiere reautenticación y mu
 ## Instalar y abrir
 
 1. Usa Windows Server 2019, 2022 o 2025 x64 **con experiencia de escritorio**. Server Core no dispone de la interfaz requerida. Ejecuta el instalador como administrador; instala el programa, sus dependencias Python y el runtime oficial WebView2 incluido. No requiere Python, IIS, un portal publicado ni acceso a Internet para instalar. El instalador de esta primera entrega no tiene firma Authenticode empresarial.
-2. Abre **Freshkampo Access** desde Inicio con la cuenta Windows que administrará la aplicación. Esa cuenta será propietaria de sus datos y debe conservarse. No hay contraseña administrativa predeterminada.
+2. Abre **Metakampo Access** desde Inicio con la cuenta Windows que administrará la aplicación. Esa cuenta será propietaria de sus datos y debe conservarse. No hay contraseña administrativa predeterminada.
 3. Elige **Demostración** para probar sin tocar AD, o **Active Directory** para operar con tu dominio. En AD necesitas RSAT Active Directory, el FQDN del controlador, el DN de la OU autorizada y el sufijo UPN. El asistente comprueba el módulo, el acceso al controlador y que la OU existe; no cambia cuentas como prueba de permisos.
 4. Crea la contraseña de `admin`, con al menos 15 caracteres, mayúsculas, minúsculas, números y símbolos. Es distinta de la contraseña Windows. Inicia sesión en la aplicación con ella.
-5. Para ajustar dominio/OU/certificados después, cierra el programa y abre **Configurar Freshkampo Access** desde Inicio. Debes confirmar la contraseña administrativa actual. Conserva el modo demo/AD de la instalación.
+5. Para ajustar dominio/OU/certificados después, cierra el programa y abre **Configurar Metakampo Access** desde Inicio. Debes confirmar la contraseña administrativa actual. Conserva el modo demo/AD de la instalación.
 
 ## Exclusivamente en este servidor
 
@@ -71,3 +71,7 @@ El mapa procesa hasta 2.000 orígenes distintos más recientes por filtro y mues
 La rama `main` conserva el portal original. La rama `codex/windows-desktop` contiene esta versión. El workflow `.github/workflows/windows-desktop.yml` compila en Windows Server 2022, ejecuta pruebas (incluida la interoperabilidad DPAPI entre Python y Windows PowerShell), analiza sintaxis PowerShell, prueba el ejecutable congelado, compila el instalador y verifica instalación silenciosa, ejecutable instalado y apertura/cierre de la ventana nativa WebView2. El artefacto de GitHub Actions contiene el `.exe` y su SHA256. La verificación de integración en el dominio real, firma con tus certificados y conexión MSTSC debe realizarse en tu servidor.
 
 Fuentes: [DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata), [pywebview](https://pywebview.flowrl.com/api/), [Inno Setup](https://jrsoftware.org/ishelp/), [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+
+## Actualización de marca 1.2.1
+
+Metakampo sustituye el nombre visible anterior y usa el emblema M proporcionado por el usuario. El icono transparente se adaptó desde esa imagen; el original se conserva en static/metakampo-logo-original.png. Se conservan AppId, carpeta de instalación y datos `%LOCALAPPDATA%\Freshkampo\Access`, entropía DPAPI e identificadores del formato .fksync para abrir instalaciones y exportaciones anteriores. No se migra ni restablece la bóveda. Cierra el programa y actualiza con el mismo usuario Windows y equipo.

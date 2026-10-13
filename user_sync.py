@@ -165,9 +165,9 @@ def register(app,db,audit,throttled,fresh_password):
                 exported.append(dict({field:user.get(field,'') for field in COLUMNS},enabled=bool(user['enabled']),source_id=user['id'],**known[user['id']]))
             if not exported:return jsonify(error='No hay contraseñas administradas verificables. Restablece primero las cuentas que deseas sincronizar desde el Directorio; las claves actuales de AD no se pueden leer.'),409
             raw=encrypt_package(dict(version=1,users=exported,includes_passwords=True,created=datetime.now(timezone.utc).isoformat()),transfer)
-            filename='Freshkampo-usuarios-con-claves.fksync'
+            filename='Metakampo-usuarios-con-claves.fksync'
         else:
-            raw=csv_bytes(current);filename='Freshkampo-usuarios-sin-claves.csv';exported=current
+            raw=csv_bytes(current);filename='Metakampo-usuarios-sin-claves.csv';exported=current
         audit('exportar usuarios con claves' if include else 'exportar usuarios CSV',str(len(exported)))
         response=send_file(io.BytesIO(raw),mimetype='application/octet-stream',as_attachment=True,download_name=filename)
         response.headers['X-Sync-Included']=str(len(exported));response.headers['X-Sync-Omitted']=str(omitted)

@@ -132,7 +132,7 @@ async function downloadRdp(data){
  if(!response.ok){const info=await response.json().catch(()=>({}));throw new Error(info.error||'No se pudo generar el cliente RDP.');}
  const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');
  const signed=response.headers.get('X-RDP-Signed')==='true';
- link.href=url;link.download=signed?(state.desktop?'Freshkampo-RDP-local-firmado.zip':'Freshkampo-RDP-firmado.zip'):'Freshkampo-RDP-DEMO-sin-firma.zip';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ link.href=url;link.download=signed?(state.desktop?'Metakampo-RDP-local-firmado.zip':'Metakampo-RDP-firmado.zip'):'Metakampo-RDP-DEMO-sin-firma.zip';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
  return signed;
 }
 async function createRdp(user){

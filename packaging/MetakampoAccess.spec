@@ -10,9 +10,9 @@ a = Analysis([str(root / 'desktop.py')], pathex=[str(root)], binaries=binaries,
              datas=datas, hiddenimports=hiddenimports + ['webview.platforms.edgechromium', 'clr'],
              excludes=['PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'cefpython3'], noarchive=False)
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='FreshkampoAccess',
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='MetakampoAccess',
           debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
           console=False, disable_windowed_traceback=True,
-          icon=str(root / 'packaging' / 'FreshkampoAccess.ico'),
+          icon=str(root / 'packaging' / 'MetakampoAccess.ico'),
           version=str(root / 'packaging' / 'version.txt'))
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='FreshkampoAccess')
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='MetakampoAccess')

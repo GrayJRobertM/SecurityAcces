@@ -30,11 +30,11 @@ jobs:
             if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
           }
       - name: Build application executable
-        run: python -m PyInstaller --clean --noconfirm packaging/FreshkampoAccess.spec
+        run: python -m PyInstaller --clean --noconfirm packaging/MetakampoAccess.spec
       - name: Verify frozen executable
         shell: powershell
         run: |
-          $process=Start-Process dist\FreshkampoAccess\FreshkampoAccess.exe -ArgumentList '--self-test' -Wait -PassThru
+          $process=Start-Process dist\MetakampoAccess\MetakampoAccess.exe -ArgumentList '--self-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw 'Frozen executable self-test failed' }
       - name: Download official offline desktop runtime
         shell: powershell
@@ -54,19 +54,19 @@ jobs:
       - name: Install and test installed executable
         shell: powershell
         run: |
-          $installer=Resolve-Path dist\installer\Freshkampo-Access-Setup-x64.exe
+          $installer=Resolve-Path dist\installer\Metakampo-Access-Setup-x64.exe
           $process=Start-Process $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\FreshkampoPilot','/LOG=C:\install-freshkampo.log' -Wait -PassThru
           if ($process.ExitCode -ne 0) { Get-Content C:\install-freshkampo.log; throw 'Installer test failed' }
-          $process=Start-Process C:\FreshkampoPilot\FreshkampoAccess.exe -ArgumentList '--self-test' -Wait -PassThru
+          $process=Start-Process C:\FreshkampoPilot\MetakampoAccess.exe -ArgumentList '--self-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw 'Installed application test failed' }
           $report=Join-Path $env:GITHUB_WORKSPACE 'dist\installer\GUI-SMOKE.txt'
-          $process=Start-Process C:\FreshkampoPilot\FreshkampoAccess.exe -ArgumentList '--gui-smoke-test','--gui-smoke-report', $report -PassThru
+          $process=Start-Process C:\FreshkampoPilot\MetakampoAccess.exe -ArgumentList '--gui-smoke-test','--gui-smoke-report', $report -PassThru
           if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Desktop window failed to open and close within 90 seconds' }
           if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Native WebView2 window test failed' }
           Get-FileHash $installer -Algorithm SHA256 | Format-List | Out-File dist\installer\SHA256.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: Freshkampo-Access-Windows-x64
+          name: Metakampo-Access-Windows-x64
           path: dist/installer/*
           if-no-files-found: error
           retention-days: 14

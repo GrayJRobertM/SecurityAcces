@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.2.0'
+VERSION = '1.2.1'
 
 
 def validate_settings(data):
@@ -248,7 +248,7 @@ def main():
                 assert mapped.status_code==200 and mapped.json['points']
                 point=mapped.json['points'][0]['id']
                 assert client.get('/api/map/events',base_url=base,query_string=dict(point=point)).json['events']
-            print('Freshkampo Access desktop self-test OK')
+            print('Metakampo Access desktop self-test OK')
         return
     if os.name != 'nt':
         raise SystemExit('La aplicación instalable está diseñada para Windows Server x64.')
@@ -272,7 +272,7 @@ def main():
     try:
         msvcrt.locking(lockfile.fileno(), msvcrt.LK_NBLCK, 1)
     except OSError:
-        raise OSError('Freshkampo Access ya está abierto en esta cuenta Windows.')
+        raise OSError('Metakampo Access ya está abierto en esta cuenta Windows.')
     collectors = []
     def ready(app):
         if app.config['MODE'] == 'ad':
@@ -293,13 +293,13 @@ def main():
     thread.start()
     webview.settings.update(ALLOW_DOWNLOADS=True, ALLOW_FILE_URLS=False,
                             OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
-    window = webview.create_window('Freshkampo Access · Este servidor', url=url,
+    window = webview.create_window('Metakampo Access · Este servidor', url=url,
                                   width=1360, height=900, min_size=(900, 650), text_select=True)
     smoke_errors = []
     if args.gui_smoke_test:
         def check_window():
             try:
-                loaded = window.evaluate_js("document.title === 'Configurar Freshkampo Access' && !!document.getElementById('setup-form') && document.getElementById('save').disabled === false")
+                loaded = window.evaluate_js("document.title === 'Configurar Metakampo Access' && !!document.getElementById('setup-form') && document.getElementById('save').disabled === false")
                 if not loaded:
                     raise RuntimeError('El asistente de escritorio no se cargó correctamente en WebView2.')
                 Path(args.gui_smoke_report).write_text('Native WebView2 window + authenticated local setup loaded successfully.\n', encoding='utf-8')
@@ -329,6 +329,6 @@ if __name__ == '__main__':
         if '--self-test' in sys.argv or '--gui-smoke-test' in sys.argv:
             raise
         if os.name == 'nt':
-            ctypes.windll.user32.MessageBoxW(None, str(exc), 'Freshkampo Access · No se pudo iniciar', 16)
+            ctypes.windll.user32.MessageBoxW(None, str(exc), 'Metakampo Access · No se pudo iniciar', 16)
         else:
             raise
