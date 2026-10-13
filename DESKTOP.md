@@ -42,6 +42,6 @@ Elimina la credencial `TERMSRV/destino` en el Administrador de credenciales para
 
 ## Compilar y verificar
 
-La rama `main` conserva el portal original. La rama `codex/windows-desktop` contiene esta versión. El workflow `.github/workflows/windows-desktop.yml` compila en Windows Server 2022, ejecuta pruebas, analiza sintaxis PowerShell, prueba el ejecutable congelado, compila el instalador y verifica instalación silenciosa y ejecutable instalado. El artefacto de GitHub Actions contiene el `.exe` y su SHA256. La verificación de integración en el dominio real, firma con tus certificados y conexión MSTSC debe realizarse en tu servidor.
+La rama `main` conserva el portal original. La rama `codex/windows-desktop` contiene esta versión. El workflow `.github/workflows/windows-desktop.yml` compila en Windows Server 2022, ejecuta pruebas (incluida la interoperabilidad DPAPI entre Python y Windows PowerShell), analiza sintaxis PowerShell, prueba el ejecutable congelado, compila el instalador y verifica instalación silenciosa, ejecutable instalado y apertura/cierre de la ventana nativa WebView2. El artefacto de GitHub Actions contiene el `.exe` y su SHA256. La verificación de integración en el dominio real, firma con tus certificados y conexión MSTSC debe realizarse en tu servidor.
 
 Fuentes: [DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata), [pywebview](https://pywebview.flowrl.com/api/), [Inno Setup](https://jrsoftware.org/ishelp/), [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).

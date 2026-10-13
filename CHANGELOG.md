@@ -22,3 +22,13 @@
 
 - Directorio y adaptador AD; generación fuerte de 15 caracteres por defecto, bóveda cifrada y auditoría.
 - Freshkampo DS v2.1, tema Fresa, con layout adaptable y modo oscuro.
+# 1.0.0 · Aplicación independiente para Windows Server
+
+- Ventana de escritorio local con asistente de configuración, acceso exclusivo y cierre del proceso con la ventana.
+- Instalador x64 con Python y runtime WebView2 oficial incluido; no requiere portal publicado ni IIS.
+- Clave/configuración con DPAPI, binding de equipo/SID, ACL privada, bóveda AES-256-GCM y contraseña administrativa elegida en el primer inicio.
+- Lector del registro Security del servidor instalado y dashboard con recuperación de eventos disponibles hasta 90 días.
+- Clientes RDP firmados con credenciales DPAPI utilizables solo en el mismo servidor y cuenta Windows, sin activación remota.
+- Compilación, pruebas Windows, prueba de ventana WebView2, instalación y ejecutable congelado en GitHub Actions.
+- Conexión al AD real y firma con certificados empresariales requieren validación en el servidor del usuario. MFA no incluido.
+

@@ -167,5 +167,23 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(dpapi(encrypted,decrypt=True),raw)
         with self.assertRaises(OSError):dpapi(encrypted[:-1],decrypt=True)
 
+    def test_dpapi_interoperates_with_windows_powershell_launcher(self):
+        import base64
+        import hashlib
+        import subprocess
+        raw=os.urandom(32)
+        script="""Add-Type -AssemblyName System.Security
+$blob=[Convert]::FromBase64String([Console]::In.ReadToEnd())
+$plain=[Security.Cryptography.ProtectedData]::Unprotect($blob,[Text.Encoding]::UTF8.GetBytes('Freshkampo.Access.Desktop.v1'),[Security.Cryptography.DataProtectionScope]::CurrentUser)
+$hash=[Security.Cryptography.SHA256]::Create()
+try { [Console]::Write(([BitConverter]::ToString($hash.ComputeHash($plain))).Replace('-','').ToLowerInvariant()) }
+finally { $hash.Dispose();[Array]::Clear($plain,0,$plain.Length) }
+"""
+        response=subprocess.run(['powershell.exe','-NoLogo','-NoProfile','-NonInteractive','-Command',script],
+                                input=base64.b64encode(dpapi(raw)).decode(),capture_output=True,
+                                text=True,timeout=30,creationflags=subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(response.returncode,0)
+        self.assertEqual(response.stdout.strip(),hashlib.sha256(raw).hexdigest())
+
 
 if __name__=='__main__':unittest.main()

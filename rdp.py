@@ -51,7 +51,7 @@ def signed_files(profile, configuration):
     if os.name!='nt':
         raise RDPError('La firma de clientes RDP requiere Windows y rdpsign.exe.')
     rdp_hash=os.environ.get('FK_RDP_CERT_HASH','').replace(' ','').upper()
-    script_hash=os.environ.get('FK_RDP_SCRIPT_CERT_HASH',rdp_hash).replace(' ','').upper()
+    script_hash=(os.environ.get('FK_RDP_SCRIPT_CERT_HASH') or rdp_hash).replace(' ','').upper()
     if not all(re.fullmatch(r'(?:[A-F0-9]{40}|[A-F0-9]{64})',x) for x in (rdp_hash,script_hash)):
         raise RDPError('Configura la huella del certificado RDP y un certificado de firma de código para el lanzador.')
     store=os.environ.get('FK_RDP_CERT_STORE','CurrentUser')

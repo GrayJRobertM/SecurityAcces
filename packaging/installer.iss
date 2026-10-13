@@ -16,6 +16,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 PrivilegesRequired=admin
 WizardStyle=modern
+SetupIconFile=FreshkampoAccess.ico
 UninstallDisplayIcon={app}\FreshkampoAccess.exe
 CloseApplications=yes
 SetupLogging=yes

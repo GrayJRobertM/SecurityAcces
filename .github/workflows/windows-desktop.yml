@@ -39,7 +39,9 @@ jobs:
         run: |
           New-Item -ItemType Directory build-tools -Force | Out-Null
           $runtime='build-tools\MicrosoftEdgeWebView2RuntimeInstallerX64.exe'
-          Invoke-WebRequest 'https://go.microsoft.com/fwlink/?linkid=2124701' -OutFile $runtime
+          $ProgressPreference='SilentlyContinue'
+          & curl.exe --fail --location --retry 2 --max-time 240 'https://go.microsoft.com/fwlink/?linkid=2124701' --output $runtime
+          if ($LASTEXITCODE -ne 0 -or (Get-Item $runtime).Length -lt 10000000) { throw 'Offline WebView2 runtime download failed' }
           $signature=Get-AuthenticodeSignature $runtime
           if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Invalid Microsoft runtime signature' }
       - name: Compile installer
