@@ -23,6 +23,7 @@ from security import generate_password, fingerprint, seal, unseal, CATEGORIES
 from rdp import RDPError, make_package, validate_connection, portal_url, configured as rdp_configured
 
 from telemetry import install as install_telemetry, register as register_telemetry
+from access_map import register as register_access_map
 
 BASE = Path(__file__).parent
 
@@ -420,6 +421,7 @@ def create_app(overrides=None):
         return jsonify(events=[dict(r) for r in db().execute('SELECT * FROM audit ORDER BY id DESC LIMIT 200')])
 
     register_telemetry(app,db,audit,throttled)
+    register_access_map(app,db)
     app.db_path = database
     return app
 

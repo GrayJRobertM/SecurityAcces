@@ -1,6 +1,6 @@
 # Freshkampo Access · Aplicación Windows Server
 
-Versión 1.0.0, x64. Instalador: **Freshkampo-Access-Setup-x64.exe**. Aplicación instalada: **FreshkampoAccess.exe**.
+Versión 1.1.0, x64. Instalador: **Freshkampo-Access-Setup-x64.exe**. Aplicación instalada: **FreshkampoAccess.exe**.
 
 ## Instalar y abrir
 
@@ -39,6 +39,16 @@ Configura las huellas y almacén de tus certificados existentes, con acceso a su
 El ZIP contiene `Conexion.rdp`, `Conectar.ps1` firmado y las instrucciones. La contraseña vigente queda dentro del lanzador **cifrada con DPAPI**, no en texto claro ni como argumento de proceso. El lanzador verifica firma, perfil firmado, máquina y SID antes de guardar la credencial Windows y abrir MSTSC. Funciona solo desde el servidor y la cuenta Windows que lo generó. No requiere portal ni código de activación.
 
 Elimina la credencial `TERMSRV/destino` en el Administrador de credenciales para retirar el almacenamiento local; cambiar la contraseña de AD invalida los paquetes antiguos. No se exportan credenciales utilizables en otros equipos. Se conservan NLA y validación del servidor. Las políticas de RDP/Credential Guard pueden impedir el uso de credenciales guardadas y exigir ingreso manual. **No incluye MFA**; requiere una implementación de MFA para RDP separada.
+
+## Mapa de accesos
+
+Abre **Mapa de accesos**. Filtra por periodo, cuenta y actividad; acerca el mapa o arrastra para separar ubicaciones próximas. Al pulsar un punto o **Ver usuarios**, consulta todas las cuentas y eventos de sus IPs, con fecha, IP, servidor y resultado. Usa **Ver más eventos** para continuar el historial del punto. Las ubicaciones se agrupan por coordenadas aproximadas; no se ocultan los usuarios que comparten una IP o VPN.
+
+La geolocalización se calcula **sin conexión**, mediante DB-IP City Lite (octubre 2026, CC BY 4.0), incluida en el instalador, y cartografía local Natural Earth de dominio público. No se envían nombres, eventos ni IPs observadas a APIs externas ni a un proveedor de mapas. La base es una instantánea; las ubicaciones cambian con el tiempo. No se descarga una base nueva automáticamente. Para reemplazarla por una MMDB compatible, con la aplicación cerrada copia una base válida a `%LOCALAPPDATA%\Freshkampo\Access\geodata\city.mmdb` y conserva su licencia/atribución; si se emplea otro proveedor debe actualizarse la atribución del producto. Una base ausente o inválida no bloquea el historial: los orígenes aparecen sin ubicación.
+
+Las IP privadas, locales, ausentes, inválidas o no conocidas se muestran en **Orígenes sin ubicación**. No se ubican en el servidor, en el centro del mapa ni en la sede corporativa por suposición. La IP puede ser la del proveedor, salida NAT, VPN o gateway; no prueba la ubicación física de una persona. En un fallo aparece la cuenta declarada en el intento, cuya autenticación no quedó confirmada. Los fallos de red tipo 3 se etiquetan aparte; no se atribuyen automáticamente a RDP. El mapa muestra **eventos históricos**, no conexiones activas ni MFA confirmado.
+
+El mapa procesa hasta 2.000 orígenes distintos más recientes por filtro y muestra un aviso cuando excede esa cobertura. Reduce el periodo o filtra por usuario para revisar otros. El panel de eventos pagina en bloques de 100 sin perder cuentas compartidas. En demostración tanto las ubicaciones como los eventos son ficticios y se rotulan como tales. Las actualizaciones del instalador conservan la bóveda y la configuración de la misma cuenta Windows.
 
 ## Compilar y verificar
 

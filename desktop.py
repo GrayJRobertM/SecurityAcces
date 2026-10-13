@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 
 
 def validate_settings(data):
@@ -230,6 +230,11 @@ def main():
             for filename in ('desktop-setup.html', 'app.js', 'icons.svg', 'fonts/InterVariable.woff2'):
                 assert (BASE / 'static' / filename).exists(), filename
             assert (BASE / 'windows' / 'Read-LocalLogons.ps1').exists()
+            from access_map import Locator
+            locator=Locator(BASE / 'geodata' / 'city.mmdb')
+            try:
+                assert locator.lookup('8.8.8.8')['located'], 'Offline geolocation not bundled'
+            finally:locator.close()
             print('Freshkampo Access desktop self-test OK')
         return
     if os.name != 'nt':

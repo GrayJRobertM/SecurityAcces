@@ -4,6 +4,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 const icon = name => `<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
 const state = {csrf:'', users:[], view:'dashboard', secretTimer:null, rdpDemo:true, desktop:false};
 const pages = {
+ map:['Mapa de accesos','Consulta desde dónde se registran los accesos y los intentos de conexión.',null],
  dashboard:['Dashboard de uso','Accesos observados en Windows, usuarios y servidores en un solo lugar.',null],
  users:['Directorio de usuarios','Gestiona cuentas y accesos de tu organización.','Nuevo usuario'],
  vault:['Bóveda de contraseñas','Credenciales protegidas, disponibles cuando las necesitas.','Nueva credencial'],
@@ -47,6 +48,7 @@ async function navigate(view){
   if(view==='audit')await loadAudit();
   if(view==='rdp')await loadRdp();
   if(view==='dashboard')await loadDashboard();
+  if(view==='map')await loadAccessMap();
  }catch(e){error(e.message);}
 }
 async function loadPolicy(){const data=await api('policy');$('length').value=data.length;$('policy-length').textContent=data.length;$('generator-length').textContent=data.length+' caracteres';}

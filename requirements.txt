@@ -1,3 +1,4 @@
 Flask>=3.1,<4
 cryptography>=46,<49
 waitress>=3,<4
+maxminddb==2.8.2
