@@ -37,7 +37,9 @@ def call_local(action, **values):
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         response = json.loads(result.stdout.lstrip('\ufeff'))
         if result.returncode or not response.get('ok'):
-            raise DirectoryError('Windows rechazó la operación local. Abre Metakampo como administrador; revisa cuentas protegidas, políticas y el estado real antes de reintentar. El modo local no admite controladores de dominio.')
+            stage=response.get('stage','');category=response.get('category','');exception=response.get('exception','')
+            diagnostics=' ['+','.join(str(value) for value in (stage,category,exception) if value)+']'
+            raise DirectoryError('Windows rechazó la operación local. Abre Metakampo como administrador; revisa cuentas protegidas, políticas y el estado real antes de reintentar. El modo local no admite controladores de dominio.'+diagnostics)
         return response.get('data')
     except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError) as exc:
         raise DirectoryError('No se pudo completar la operación local. Verifica el estado de Windows antes de reintentar.') from exc

@@ -34,6 +34,7 @@ try {
         return @{id=$user.SID.Value;username=$user.Name;domain_guid=$scope;stamp=(Stamp $user)}
     }
     function UserObject($user) { return [ADSI]("WinNT://"+$env:COMPUTERNAME+'/'+$user.Name+',user') }
+    $stage='dispatch'
     switch ($request.action) {
         'check' { $data=@{local=$true;computer=$env:COMPUTERNAME;scope=$scope} }
         'list' {
@@ -55,14 +56,18 @@ try {
             if ([string]$request.username -notmatch '^[a-zA-Z0-9._-]{1,20}$' -or [string]$request.username -match '\.$' -or [string]$request.username -in '.','..') {throw 'Invalid username'}
             $secure=ConvertTo-SecureString -String $request.password -AsPlainText -Force
             $enabled=if ($request.PSObject.Properties.Name -contains 'enabled') {[bool]$request.enabled} else {$true}
+            $stage='create'
             $user=New-LocalUser -Name $request.username -FullName $request.name -Description ([string]$request.department) -Password $secure -Disabled:(-not $enabled) -ErrorAction Stop
             # Standard Users membership only; RDP rights remain controlled by Windows policy.
+            $stage='group'
             Add-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-545') -Member $user -ErrorAction Stop
+            $stage='password-stamp'
             $data=PasswordResult $user
         }
         {$_ -in 'reset','enable','disable','unlock','update'} {
             $user=Scoped $request.identifier
-            switch ($request.action) {
+            $stage='dispatch'
+    switch ($request.action) {
                 'reset' {$secure=ConvertTo-SecureString -String $request.password -AsPlainText -Force;Set-LocalUser -SID $user.SID -Password $secure -ErrorAction Stop}
                 'enable' {Enable-LocalUser -SID $user.SID -ErrorAction Stop}
                 'disable' {Disable-LocalUser -SID $user.SID -ErrorAction Stop}
@@ -78,7 +83,7 @@ try {
     }
     @{ok=$true;data=$data} | ConvertTo-Json -Depth 6 -Compress
 } catch {
-    @{ok=$false;error='LOCAL_OPERATION_FAILED'} | ConvertTo-Json -Compress
+    @{ok=$false;error='LOCAL_OPERATION_FAILED';stage=$stage;category=[string]$_.CategoryInfo.Category;exception=$_.Exception.GetType().FullName} | ConvertTo-Json -Compress
     exit 1
 } finally {
     if ($secure) {$secure.Dispose()}
