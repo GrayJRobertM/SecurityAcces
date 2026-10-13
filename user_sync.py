@@ -265,7 +265,9 @@ def register(app,db,audit,throttled,fresh_password):
                                 else:
                                     domain,versions=stamps([identifier]);stamp=versions.get(identifier,'')
                                     if stamp!=item['target_stamp']:raise DirectoryError('La contraseña cambió durante la importación.')
-                            else:domain=contents['domain'];stamp=str(uuid.uuid4())
+                            else:
+                                domain=contents['domain']
+                                stamp=item['target_stamp'] if item['target_id'] and not item['reset'] and item['target_stamp'] else str(uuid.uuid4())
                             remember(db(),key,identifier,item['username'],password,domain,stamp)
                             db().execute('INSERT OR IGNORE INTO issued(fingerprint) VALUES(?)',(fingerprint(key,password),));db().commit()
                         result=dict(username=item['username'],result='aplicado',action=item['action'])

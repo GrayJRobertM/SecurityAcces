@@ -186,5 +186,14 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(user['name'],'Nombre actualizado');self.assertFalse(user['enabled'])
         self.assertEqual(self.post('user-sync/password/'+user['id'],dict(admin_password=self.admin)).json['password'],password)
 
+    def test_reimporting_same_verified_file_is_idempotent(self):
+        self.create();raw=self.export()
+        for _ in range(2):
+            preview=self.preview(raw);self.assertEqual(preview.status_code,200,preview.json)
+            self.assertEqual(preview.json['resets'],0)
+            applied=self.post('user-sync/apply',dict(plan=preview.json['plan'],admin_password=self.admin))
+            self.assertEqual(applied.status_code,202,applied.json)
+            self.assertEqual(self.wait(applied.json['job'])['status'],'completado')
+
 
 if __name__=='__main__':unittest.main()
