@@ -38,5 +38,5 @@
 - Detalle de todas las cuentas, IPs, fechas y resultados al pulsar un punto, con paginación y filtros de cuenta/periodo/actividad.
 - DB-IP City Lite (octubre 2026) y cartografía Natural Earth incluidos para consultas offline; sin enviar IPs ni usuarios a terceros.
 - Orígenes privados/desconocidos fuera del mapa; intentos fallidos diferenciados de accesos y fallos de red diferenciados de RDP.
-- Ocho pruebas adicionales de autenticación, filtros, IPv4/IPv6, ausencia de geolocalización, agrupación y paginación.
+- Nueve pruebas adicionales de autenticación, filtros, IPv4/IPv6, ausencia de geolocalización, agrupación y paginación.
 

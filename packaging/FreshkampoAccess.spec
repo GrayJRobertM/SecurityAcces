@@ -4,7 +4,8 @@ from PyInstaller.utils.hooks import collect_all
 
 root = Path(SPECPATH).parent
 datas, binaries, hiddenimports = collect_all('webview')
-datas += [(str(root / 'static'), 'static'), (str(root / 'windows'), 'windows'), (str(root / 'geodata'), 'geodata')]
+datas += [(str(root / 'static'), 'static'), (str(root / 'windows'), 'windows')]
+datas += [(str(root / 'geodata' / filename), 'geodata') for filename in ('city.mmdb','source.json','NOTICE.txt')]
 a = Analysis([str(root / 'desktop.py')], pathex=[str(root)], binaries=binaries,
              datas=datas, hiddenimports=hiddenimports + ['webview.platforms.edgechromium', 'clr'],
              excludes=['PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'cefpython3'], noarchive=False)

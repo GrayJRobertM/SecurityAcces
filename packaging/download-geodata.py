@@ -11,8 +11,12 @@ root=Path(__file__).parents[1]/'geodata'
 metadata=json.loads((root/'source.json').read_text(encoding='utf-8'))
 with tempfile.TemporaryDirectory() as folder:
     compressed=Path(folder)/'city.mmdb.gz'
-    with urllib.request.urlopen(metadata['url'],timeout=120) as source,compressed.open('wb') as output:
-        shutil.copyfileobj(source,output)
+    snapshot=root/('dbip-city-lite-'+metadata['release']+'.mmdb.gz')
+    if snapshot.is_file():
+        shutil.copyfile(snapshot,compressed)
+    else:
+        with urllib.request.urlopen(metadata['url'],timeout=120) as source,compressed.open('wb') as output:
+            shutil.copyfileobj(source,output)
     if hashlib.sha256(compressed.read_bytes()).hexdigest()!=metadata['compressed_sha256']:
         raise SystemExit('Dataset download checksum mismatch')
     target=root/'city.mmdb'

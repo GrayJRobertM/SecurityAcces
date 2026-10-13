@@ -111,5 +111,13 @@ class MapTests(unittest.TestCase):
             self.assertFalse(locator.lookup('192.168.1.1')['located'])
         finally:locator.close()
 
+    def test_invalid_database_keeps_events_available_without_a_false_pin(self):
+        invalid=Path(self.temp.name)/'invalid.mmdb'
+        invalid.write_bytes(b'invalid mmdb')
+        locator=Locator(invalid)
+        self.assertFalse(locator.info['available'])
+        self.assertFalse(locator.lookup('8.8.8.8')['located'])
+        locator.close()
+
 
 if __name__=='__main__':unittest.main()

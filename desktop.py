@@ -227,7 +227,8 @@ def main():
             assert reopened.values == store.values
             app = reopened.application()
             assert app.config['DESKTOP'] and app.db_path.exists()
-            for filename in ('desktop-setup.html', 'app.js', 'icons.svg', 'fonts/InterVariable.woff2'):
+            for filename in ('desktop-setup.html', 'app.js', 'icons.svg', 'fonts/InterVariable.woff2',
+                             'access-map.js','access-map.css','maps/world.svg'):
                 assert (BASE / 'static' / filename).exists(), filename
             assert (BASE / 'windows' / 'Read-LocalLogons.ps1').exists()
             from access_map import Locator
@@ -235,6 +236,18 @@ def main():
             try:
                 assert locator.lookup('8.8.8.8')['located'], 'Offline geolocation not bundled'
             finally:locator.close()
+            password=secrets.token_urlsafe(24)
+            with connection(app.db_path) as db:
+                db.execute('INSERT INTO admin VALUES(1,?)',(generate_password_hash(password,method='pbkdf2:sha256:1000000'),))
+            with app.test_client() as client:
+                base='http://127.0.0.1'
+                csrf=client.get('/api/session',base_url=base).json['csrf']
+                login=client.post('/api/login',base_url=base,json=dict(username='admin',password=password),headers={'X-CSRF-Token':csrf})
+                assert login.status_code==200
+                mapped=client.get('/api/map',base_url=base)
+                assert mapped.status_code==200 and mapped.json['points']
+                point=mapped.json['points'][0]['id']
+                assert client.get('/api/map/events',base_url=base,query_string=dict(point=point)).json['events']
             print('Freshkampo Access desktop self-test OK')
         return
     if os.name != 'nt':

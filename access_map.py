@@ -28,12 +28,15 @@ class Locator:
         if demo:
             self.info.update(available=True, source='Ubicaciones ficticias de demostración')
         elif database and Path(database).is_file():
+            import maxminddb
             try:
-                import maxminddb
                 self.reader = maxminddb.open_database(str(database))
                 stamp = self.reader.metadata().build_epoch
                 self.info.update(available=True, date=datetime.fromtimestamp(stamp,timezone.utc).strftime('%Y-%m-%d'))
-            except (OSError,ValueError):
+            except (OSError,ValueError,maxminddb.InvalidDatabaseError):
+                if self.reader:
+                    self.reader.close()
+                    self.reader=None
                 self.info['error']='No se pudo abrir la base local de geolocalización.'
 
     def close(self):
