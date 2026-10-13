@@ -2,6 +2,7 @@
 import json
 import socket
 import sqlite3
+from storage import connection
 import threading
 import time
 import uuid
@@ -26,7 +27,7 @@ def commit_batch(database, server, data, now=None):
     if any(row[2] > data['last_record'] for row in rows):
         raise ValueError('Los eventos exceden el cursor confirmado.')
     state = dict(epoch=epoch, last_record=data['last_record'], last_clear=data['last_clear'])
-    with sqlite3.connect(database, timeout=15) as db:
+    with connection(database, timeout=15) as db:
         db.execute('BEGIN IMMEDIATE')
         accepted = sum(db.execute(INSERT, ('windows',) + row).rowcount for row in rows)
         db.execute('INSERT OR REPLACE INTO local_collector_state VALUES(1,?)', (json.dumps(state),))
@@ -42,7 +43,7 @@ class LocalCollector:
         self.database = database
         self.server = hostname(socket.getfqdn())
         self.cancel = threading.Event()
-        with sqlite3.connect(database) as db:
+        with connection(database) as db:
             db.execute('CREATE TABLE IF NOT EXISTS local_collector_state(id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL)')
             db.execute('INSERT OR IGNORE INTO collectors(id,name,server,token_hash) VALUES(?,?,?,?)',
                        ('local-desktop', 'Eventos de este servidor', self.server, 'no-network-token'))
@@ -59,7 +60,7 @@ class LocalCollector:
         while not self.cancel.is_set():
             delay = 60
             try:
-                with sqlite3.connect(self.database) as db:
+                with connection(self.database) as db:
                     row = db.execute('SELECT state FROM local_collector_state WHERE id=1').fetchone()
                 state = json.loads(row[0]) if row else dict(epoch=str(uuid.uuid4()), last_record=0, last_clear=None)
                 data = powershell(BASE / 'windows' / 'Read-LocalLogons.ps1', state, timeout=45)

@@ -55,6 +55,10 @@ jobs:
           if ($process.ExitCode -ne 0) { Get-Content C:\install-freshkampo.log; throw 'Installer test failed' }
           $process=Start-Process C:\FreshkampoPilot\FreshkampoAccess.exe -ArgumentList '--self-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw 'Installed application test failed' }
+          $report=Join-Path $env:GITHUB_WORKSPACE 'dist\installer\GUI-SMOKE.txt'
+          $process=Start-Process C:\FreshkampoPilot\FreshkampoAccess.exe -ArgumentList '--gui-smoke-test','--gui-smoke-report', $report -PassThru
+          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Desktop window failed to open and close within 90 seconds' }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Native WebView2 window test failed' }
           Get-FileHash $installer -Algorithm SHA256 | Format-List | Out-File dist\installer\SHA256.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:

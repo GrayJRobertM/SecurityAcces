@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import sqlite3
+from storage import connection
 import time
 import uuid
 from datetime import timedelta
@@ -54,7 +55,7 @@ def create_app(overrides=None):
     app.secret_key = hashlib.sha256(b'fk-session\x00' + key).digest()
     app.config['VAULT_KEY'] = key
     database = folder / 'access.sqlite3'
-    with sqlite3.connect(database) as db:
+    with connection(database) as db:
         db.executescript('''
         CREATE TABLE IF NOT EXISTS admin (id INTEGER PRIMARY KEY CHECK(id=1), hash TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires REAL NOT NULL);
@@ -433,7 +434,7 @@ if __name__=='__main__':
         first=getpass.getpass('Nueva contraseña del administrador (mínimo 15 caracteres): ')
         if len(first)<15 or first!=getpass.getpass('Confirma la contraseña: '):
             raise SystemExit('La contraseña no cumple o la confirmación no coincide.')
-        with sqlite3.connect(app.db_path) as db:
+        with connection(app.db_path) as db:
             db.execute('INSERT OR REPLACE INTO admin VALUES (1,?)',(generate_password_hash(first, method="pbkdf2:sha256:1000000"),))
             db.execute('DELETE FROM sessions')
         print('Administrador configurado. Usuario: admin')

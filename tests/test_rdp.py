@@ -2,6 +2,7 @@ import io
 import json
 import os
 import sqlite3
+from storage import connection
 import tempfile
 import time
 import unittest
@@ -22,7 +23,7 @@ class RDPTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.app=create_app({'DATA_DIR':self.temp.name,'MODE':'demo','TESTING':True})
-        with sqlite3.connect(self.app.db_path) as db:db.execute('INSERT INTO admin VALUES(1,?)',(self.admin_hash,))
+        with connection(self.app.db_path) as db:db.execute('INSERT INTO admin VALUES(1,?)',(self.admin_hash,))
         self.client=self.app.test_client()
         csrf=self.client.get('/api/session').json['csrf']
         result=self.client.post('/api/login',json={'username':'admin','password':self.admin},headers={'X-CSRF-Token':csrf})
@@ -75,7 +76,7 @@ class RDPTests(unittest.TestCase):
                 self.assertNotIn(self.rdp_password.encode(),data)
                 self.assertNotIn(self.code.encode(),data)
                 self.assertNotIn(self.rdp_password.encode('utf-16-le'),data)
-        with sqlite3.connect(self.app.db_path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM rdp_clients').fetchone()[0],0)
+        with connection(self.app.db_path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM rdp_clients').fetchone()[0],0)
     def test_package_requires_authentication_csrf_and_https(self):
         anonymous=self.app.test_client()
         self.assertEqual(anonymous.get('/api/rdp/clients').status_code,401)
@@ -89,14 +90,14 @@ class RDPTests(unittest.TestCase):
         with patch.dict(os.environ,{'FK_RDP_PORTAL_URL':'https://access.example.test'}),patch('app.make_package',side_effect=RDPError('Firma no disponible')):
             response=self.post('rdp/package',self.payload,https=True)
         self.assertEqual(response.status_code,503)
-        with sqlite3.connect(self.app.db_path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM rdp_clients').fetchone()[0],0)
+        with connection(self.app.db_path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM rdp_clients').fetchone()[0],0)
     def test_activation_is_encrypted_and_one_use_without_admin_session(self):
         identifier,archive=self.provision()
         with ZipFile(io.BytesIO(archive)) as z:
             for name in z.namelist():
                 self.assertNotIn(self.rdp_password.encode(),z.read(name))
                 self.assertNotIn(self.code.encode(),z.read(name))
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             secret,code_hash=db.execute('SELECT secret,code_hash FROM rdp_clients WHERE id=?',(identifier,)).fetchone()
         self.assertNotIn(self.rdp_password.encode(),secret)
         self.assertNotIn(self.code,code_hash)
@@ -107,7 +108,7 @@ class RDPTests(unittest.TestCase):
         self.assertEqual(response.json['password'],self.rdp_password)
         self.assertEqual(response.headers['Cache-Control'],'no-store')
         self.assertEqual(self.redeem(identifier).status_code,403)
-        with sqlite3.connect(self.app.db_path) as db:self.assertIsNone(db.execute('SELECT secret FROM rdp_clients WHERE id=?',(identifier,)).fetchone()[0])
+        with connection(self.app.db_path) as db:self.assertIsNone(db.execute('SELECT secret FROM rdp_clients WHERE id=?',(identifier,)).fetchone()[0])
         listing=self.client.get('/api/rdp/clients').json
         self.assertNotIn(self.rdp_password,json.dumps(listing))
         self.assertNotIn(self.code,json.dumps(self.client.get('/api/audit').json))
@@ -116,9 +117,9 @@ class RDPTests(unittest.TestCase):
         self.assertEqual(self.redeem(identifier,https=False).status_code,403)
         browser=self.app.test_client()
         self.assertEqual(browser.post('/api/rdp/redeem',json={'id':identifier,'code':self.code},headers={'Origin':'https://evil.example'},environ_overrides={'wsgi.url_scheme':'https'}).status_code,403)
-        with sqlite3.connect(self.app.db_path) as db:db.execute('UPDATE rdp_clients SET expires=? WHERE id=?',(time.time()-1,identifier))
+        with connection(self.app.db_path) as db:db.execute('UPDATE rdp_clients SET expires=? WHERE id=?',(time.time()-1,identifier))
         self.assertEqual(self.redeem(identifier).status_code,403)
-        with sqlite3.connect(self.app.db_path) as db:self.assertIsNone(db.execute('SELECT secret FROM rdp_clients WHERE id=?',(identifier,)).fetchone()[0])
+        with connection(self.app.db_path) as db:self.assertIsNone(db.execute('SELECT secret FROM rdp_clients WHERE id=?',(identifier,)).fetchone()[0])
     def test_activation_can_be_revoked(self):
         identifier,_=self.provision()
         self.assertEqual(self.post('rdp/clients/'+identifier+'/revoke').status_code,200)

@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from storage import connection
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -13,7 +14,7 @@ class AccessTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.app=create_app({'TESTING':True,'DATA_DIR':self.temp.name,'MODE':'demo'})
         self.password=generate_password(24)
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             db.execute('INSERT INTO admin VALUES (1,?)',(generate_password_hash(self.password, method="pbkdf2:sha256:1000000"),))
         self.client=self.app.test_client()
         self.csrf=self.client.get('/api/session').json['csrf']
@@ -47,7 +48,7 @@ class AccessTests(unittest.TestCase):
         with patch('app.generate_password',side_effect=[first,first,second]):
             self.assertEqual(self.post('generate').json['password'],first)
             self.assertEqual(self.post('generate').json['password'],second)
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM issued').fetchone()[0],2)
     def test_vault_is_encrypted_and_reauthenticated(self):
         self.login()
@@ -95,7 +96,7 @@ class AccessTests(unittest.TestCase):
             def handle_starttag(self, tag, attrs):
                 if tag=='form':self.methods.append(dict(attrs).get('method','get'))
         parser=Forms()
-        parser.feed((Path(__file__).parents[1]/'static'/'index.html').read_text())
+        parser.feed((Path(__file__).parents[1]/'static'/'index.html').read_text(encoding='utf-8'))
         self.assertTrue(parser.methods)
         self.assertTrue(all(m=='post' for m in parser.methods))
 

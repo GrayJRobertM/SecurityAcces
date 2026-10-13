@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from storage import connection
 import tempfile
 import time
 import unittest
@@ -98,9 +99,9 @@ class DesktopDataTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.json)
         self.assertTrue(gate.application.config['DESKTOP'])
         self.assertFalse(gate.application.config['SESSION_COOKIE_SECURE'])
-        with sqlite3.connect(gate.application.db_path) as db:
+        with connection(gate.application.db_path) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM admin').fetchone()[0],1)
-        self.assertNotIn(password,store.file.read_text())
+        self.assertNotIn(password,store.file.read_text(encoding='utf-8'))
 
 
 class LocalEventTests(unittest.TestCase):
@@ -109,7 +110,7 @@ class LocalEventTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         with patch.dict(os.environ,{},clear=False):
             self.app=create_app(dict(DATA_DIR=self.temp.name,MODE='demo',TESTING=True,DESKTOP=True))
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             db.execute('CREATE TABLE local_collector_state(id INTEGER PRIMARY KEY,state TEXT NOT NULL)')
             db.execute('INSERT INTO collectors(id,name,server,token_hash) VALUES(?,?,?,?)',
                        ('local-desktop','Local','pilot.example.test','no-network-token'))
@@ -121,12 +122,12 @@ class LocalEventTests(unittest.TestCase):
     def test_checkpoint_and_events_commit_together_and_deduplicate(self):
         self.assertEqual(commit_batch(self.app.db_path,'pilot.example.test',self.batch),1)
         self.assertEqual(commit_batch(self.app.db_path,'pilot.example.test',self.batch),0)
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM windows_events WHERE source='windows'").fetchone()[0],1)
             self.assertEqual(json.loads(db.execute('SELECT state FROM local_collector_state').fetchone()[0])['last_record'],1)
         invalid=dict(self.batch,events=[dict(self.event,password='not admitted')],last_record=2)
         with self.assertRaises(ValueError):commit_batch(self.app.db_path,'pilot.example.test',invalid)
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             self.assertEqual(json.loads(db.execute('SELECT state FROM local_collector_state').fetchone()[0])['last_record'],1)
 
     def test_desktop_disables_remote_receivers_even_without_gate(self):
@@ -136,7 +137,7 @@ class LocalEventTests(unittest.TestCase):
 
     def test_local_rdp_requires_reauth_and_uses_dpapi_without_broker(self):
         password=generate_password(24)
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             db.execute('INSERT INTO admin VALUES(1,?)',(generate_password_hash(password,method='pbkdf2:sha256:1000000'),))
         client=self.app.test_client()
         csrf=client.get('/api/session').json['csrf']
@@ -152,7 +153,7 @@ class LocalEventTests(unittest.TestCase):
         self.assertTrue(configuration['local'])
         self.assertNotIn(body['account_password'],json.dumps(configuration))
         self.assertNotIn('portal',configuration)
-        with sqlite3.connect(self.app.db_path) as db:
+        with connection(self.app.db_path) as db:
             self.assertEqual(db.execute('SELECT secret,consumed FROM rdp_clients').fetchone(),(None,1))
         self.assertNotIn(body['account_password'].encode(),self.app.db_path.read_bytes())
 

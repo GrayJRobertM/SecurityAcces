@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import sqlite3
+from storage import connection
 import sys
 import tempfile
 import threading
@@ -172,7 +173,7 @@ def setup_application(store, gate, on_ready):
                 if settings['mode'] != store.values['settings']['mode']:
                     raise ValueError('Esta instalación conserva su modo. Usa otra cuenta Windows para un entorno de pruebas separado.')
                 database = store.folder / settings['mode'] / 'access.sqlite3'
-                with sqlite3.connect(database) as db:
+                with connection(database) as db:
                     admin = db.execute('SELECT hash FROM admin WHERE id=1').fetchone()
                 if not admin or not check_password_hash(admin[0], password):
                     with save_lock:
@@ -196,7 +197,7 @@ def setup_application(store, gate, on_ready):
             try:
                 real = store.application()
                 if initial:
-                    with sqlite3.connect(real.db_path) as db:
+                    with connection(real.db_path) as db:
                         db.execute('INSERT OR REPLACE INTO admin VALUES(1,?)', (generate_password_hash(password, method='pbkdf2:sha256:1000000'),))
                 store.save(settings)
             except Exception:
@@ -214,6 +215,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--configure', action='store_true')
     parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--gui-smoke-test', action='store_true')
+    parser.add_argument('--gui-smoke-report', default='gui-smoke-report.txt')
     args = parser.parse_args()
     if args.self_test:
         # A real frozen-executable smoke test uses ephemeral DPAPI data, never production.
@@ -231,10 +234,16 @@ def main():
         return
     if os.name != 'nt':
         raise SystemExit('La aplicación instalable está diseñada para Windows Server x64.')
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r'SOFTWARE\Microsoft\Windows NT\CurrentVersion') as key:
+        installation_type=winreg.QueryValueEx(key,'InstallationType')[0]
+    if installation_type != 'Server':
+        raise OSError('Se requiere Windows Server con experiencia de escritorio.')
     import webview
     from waitress import create_server
     from local_telemetry import LocalCollector
-    folder = Path(os.environ['LOCALAPPDATA']) / 'Freshkampo' / 'Access'
+    temporary = tempfile.TemporaryDirectory(prefix='fk-gui-smoke-') if args.gui_smoke_test else None
+    folder = Path(temporary.name) if temporary else Path(os.environ['LOCALAPPDATA']) / 'Freshkampo' / 'Access'
     store = Store(folder)
     lockfile = open(folder / 'desktop.lock', 'a+b')
     if not lockfile.tell():
@@ -268,6 +277,19 @@ def main():
                             OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
     window = webview.create_window('Freshkampo Access · Este servidor', url=url,
                                   width=1360, height=900, min_size=(900, 650), text_select=True)
+    smoke_errors = []
+    if args.gui_smoke_test:
+        def check_window():
+            try:
+                loaded = window.evaluate_js("document.title === 'Configurar Freshkampo Access' && !!document.getElementById('setup-form') && document.getElementById('save').disabled === false")
+                if not loaded:
+                    raise RuntimeError('El asistente de escritorio no se cargó correctamente en WebView2.')
+                Path(args.gui_smoke_report).write_text('Native WebView2 window + authenticated local setup loaded successfully.\n', encoding='utf-8')
+            except Exception as exc:
+                smoke_errors.append(str(exc))
+            finally:
+                window.destroy()
+        window.events.loaded += check_window
     try:
         webview.start(gui='edgechromium', private_mode=True, debug=False,
                       storage_path=str(folder / 'webview'))
@@ -276,13 +298,17 @@ def main():
             collector.stop()
         server.close()
         lockfile.close()
+        if temporary:
+            temporary.cleanup()
+    if smoke_errors:
+        raise RuntimeError(smoke_errors[0])
 
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as exc:
-        if '--self-test' in sys.argv:
+        if '--self-test' in sys.argv or '--gui-smoke-test' in sys.argv:
             raise
         if os.name == 'nt':
             ctypes.windll.user32.MessageBoxW(None, str(exc), 'Freshkampo Access · No se pudo iniciar', 16)

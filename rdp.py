@@ -83,7 +83,7 @@ def signed_files(profile, configuration):
         config=dict(configuration,rdpSha256=hashlib.sha256(signed).hexdigest(),signerSha256=result['scriptSignerSha256'])
         encoded=base64.b64encode(json.dumps(config).encode()).decode()
         template_name='Connect-LocalRDP.template.ps1' if configuration.get('local') else 'Connect-RDP.template.ps1'
-        template=(BASE/'windows'/template_name).read_text()
+        template=(BASE/'windows'/template_name).read_text(encoding='utf-8')
         launcher.write_text(template.replace('__CONFIG_BASE64__',encoded),encoding='utf-8-sig')
         run('script')
         return signed,launcher.read_bytes()

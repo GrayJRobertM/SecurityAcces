@@ -5,6 +5,7 @@ import random
 import re
 import secrets
 import sqlite3
+from storage import connection
 import time
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -53,7 +54,7 @@ def normalize(item,server,epoch,now=None):
 INSERT='INSERT OR IGNORE INTO windows_events(source,server,epoch,record_id,event_id,occurred,username,identity,ip,logon_type,logon_id,session_name,status,substatus,kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
 
 def install(database,mode):
-    with sqlite3.connect(database) as db:
+    with connection(database) as db:
         db.executescript('''
         CREATE TABLE IF NOT EXISTS collectors(id TEXT PRIMARY KEY,name TEXT NOT NULL,server TEXT NOT NULL,token_hash TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,demo INTEGER NOT NULL DEFAULT 0,last_seen REAL,last_gap REAL,gap_reason TEXT NOT NULL DEFAULT '',last_count INTEGER NOT NULL DEFAULT 0,created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE UNIQUE INDEX IF NOT EXISTS collectors_active_server ON collectors(server) WHERE demo=0 AND enabled=1;
