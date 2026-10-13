@@ -16,3 +16,5 @@
 /* DS-EXCEPTION: chart series 1 uses the official dark info token to meet graphical contrast on dark surfaces. */
 [data-mode="dark"]{--fk-chart-series-1:var(--fk-global-status-info)}
 @media(max-width:1023px){.sidebar-bottom{background:var(--fk-global-surface-default);border-left:var(--border-width) solid var(--fk-global-border-subtle)}}
+
+.sync-toolbar{display:flex;gap:var(--fk-space-3);flex-wrap:wrap;align-items:center;margin-bottom:var(--fk-space-6)}.sync-toolbar .helper{flex-basis:100%;margin:0}.sync-check{display:flex;gap:var(--fk-space-3);align-items:center}.sync-check input{width:var(--fk-control-md);height:var(--fk-control-md);flex-shrink:0}.sync-preview{max-height:360px;overflow:auto}.sync-job-list{max-height:360px;overflow:auto}

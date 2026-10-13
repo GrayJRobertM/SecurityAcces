@@ -56,7 +56,7 @@ class Locator:
                 return dict(missing,reason='Ejemplo sin ubicación')
             lat,lon,label=DEMO_CITIES[int(str(address).split('.')[-1]) % len(DEMO_CITIES)]
             return dict(located=True,latitude=lat,longitude=lon,label=label,approximate=True,demo=True)
-        if not address.is_global:
+        if not address.is_global or address.is_multicast or address.is_reserved or address.is_unspecified:
             return dict(missing,reason='IP privada, local o no geolocalizable')
         if not self.reader:
             return dict(missing,reason='Base local de geolocalización no disponible')
@@ -152,7 +152,7 @@ def register(app,db):
             if identifier not in selection:return jsonify(error='El punto ya no está en este periodo. Actualiza el mapa.'),404
             try:cursor=int(request.args.get('before','0'))
             except ValueError:raise ValueError('Cursor inválido.')
-            if cursor<0:raise ValueError('Cursor inválido.')
+            if not 0<=cursor<=2**63-1:raise ValueError('Cursor inválido.')
             where,params=filters(request.args,app.config['MODE'])
             ips=selection[identifier]
             where+=' AND ip IN ('+','.join('?' for _ in ips)+')';params+=ips

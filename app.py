@@ -24,6 +24,7 @@ from rdp import RDPError, make_package, validate_connection, portal_url, configu
 
 from telemetry import install as install_telemetry, register as register_telemetry
 from access_map import register as register_access_map
+from user_sync import install as install_user_sync, register as register_user_sync, remember as remember_user_password
 
 BASE = Path(__file__).parent
 
@@ -75,6 +76,7 @@ def create_app(overrides=None):
                 ('Ana García','ana.garcia','Operaciones',1), ('Luis Mendoza','luis.mendoza','Comercial',0),
                 ('Sofía Ramírez','sofia.ramirez','Recursos Humanos',1), ('Carlos Vega','carlos.vega','Logística',1)]])
     install_telemetry(database,app.config['MODE'])
+    install_user_sync(database)
     if os.name != 'nt':
         database.chmod(0o600)
     attempts = {}
@@ -124,6 +126,8 @@ def create_app(overrides=None):
 
     @app.before_request
     def protect():
+        if request.path=='/api/user-sync/preview':
+            request.max_content_length=2*1048576
         if app.config.get('DESKTOP') and request.path.startswith(('/api/telemetry/events','/api/collectors','/api/rdp/redeem')):
             return jsonify(error='Esta instalación solo admite operación local.'),403
         if request.path == '/api/telemetry/events' and request.method == 'POST':
@@ -224,9 +228,13 @@ def create_app(overrides=None):
             raise ValueError('El usuario admite letras, números, punto, guion y guion bajo; máximo 20 caracteres.')
         password = fresh_password()
         if app.config['MODE']=='ad':
-            call_ad('create', name=name, username=username, department=department, password=password)
+            result=call_ad('create', name=name, username=username, department=department, password=password)
+            if result and result.get('id'):
+                remember_user_password(db(),key,result['id'],username,password,result.get('domain_guid',''),result.get('stamp',''))
         else:
-            db().execute('INSERT INTO users VALUES (?,?,?,?,1)',(str(uuid.uuid4()),name,username,department))
+            identifier=str(uuid.uuid4())
+            db().execute('INSERT INTO users VALUES (?,?,?,?,1)',(identifier,name,username,department))
+            remember_user_password(db(),key,identifier,username,password,db().execute('SELECT identifier FROM sync_instance').fetchone()[0],str(uuid.uuid4()))
         audit('crear usuario',username)
         return jsonify(password=password, message='Usuario creado. Debe cambiar la contraseña al iniciar sesión.'),201
 
@@ -240,10 +248,15 @@ def create_app(overrides=None):
             raise ValueError('Identificador inválido.')
         password = fresh_password() if action=='reset' else None
         if app.config['MODE']=='ad':
-            call_ad(action, identifier=identifier, **({'password':password} if password else {}))
+            result=call_ad(action, identifier=identifier, **({'password':password} if password else {}))
+            if password and result and result.get('username'):
+                remember_user_password(db(),key,identifier,result['username'],password,result.get('domain_guid',''),result.get('stamp',''))
         else:
             if not db().execute('SELECT 1 FROM users WHERE id=?',(identifier,)).fetchone():
                 return jsonify(error='Usuario no encontrado.'),404
+            if password:
+                username=db().execute('SELECT username FROM users WHERE id=?',(identifier,)).fetchone()[0]
+                remember_user_password(db(),key,identifier,username,password,db().execute('SELECT identifier FROM sync_instance').fetchone()[0],str(uuid.uuid4()))
             if action in ('enable','disable'):
                 db().execute('UPDATE users SET enabled=? WHERE id=?',(action=='enable',identifier))
         audit(action,identifier)
@@ -422,6 +435,7 @@ def create_app(overrides=None):
 
     register_telemetry(app,db,audit,throttled)
     register_access_map(app,db)
+    register_user_sync(app,db,audit,throttled,fresh_password)
     app.db_path = database
     return app
 

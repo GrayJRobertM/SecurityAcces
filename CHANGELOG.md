@@ -40,3 +40,12 @@
 - Orígenes privados/desconocidos fuera del mapa; intentos fallidos diferenciados de accesos y fallos de red diferenciados de RDP.
 - Nueve pruebas adicionales de autenticación, filtros, IPv4/IPv6, ausencia de geolocalización, agrupación y paginación.
 
+# 1.2.0 · Sincronización protegida de usuarios y contraseñas
+
+- Importación/exportación desde el directorio con confirmación administrativa, vista previa y confirmación antes de aplicar.
+- Archivo .fksync AES-256-GCM con clave de transferencia independiente; CSV reservado a atributos sin contraseñas.
+- Contraseñas generadas/aplicadas por el gestor guardadas cifradas y verificadas contra la versión de replicación de AD; claves desconocidas o desactualizadas no se exportan.
+- Sincronización local de secretos entre instancias del mismo AD sin restablecer cuando coinciden dominio, GUID y versión; archivos antiguos rechazados.
+- Lotes de hasta 500 cuentas, control de colisiones, progreso e historial de resultados; sin eliminación, ampliación de grupos ni copia de claves maestras.
+- Conserva el módulo de mapa offline de accesos.
+

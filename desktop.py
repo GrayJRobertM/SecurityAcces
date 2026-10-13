@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 
 
 def validate_settings(data):

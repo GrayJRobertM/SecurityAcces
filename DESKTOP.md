@@ -1,6 +1,22 @@
 # Freshkampo Access · Aplicación Windows Server
 
-Versión 1.1.0, x64. Instalador: **Freshkampo-Access-Setup-x64.exe**. Aplicación instalada: **FreshkampoAccess.exe**.
+Versión 1.2.0, x64. Instalador: **Freshkampo-Access-Setup-x64.exe**. Aplicación instalada: **FreshkampoAccess.exe**.
+
+## Importar y exportar usuarios con contraseñas
+
+En **Directorio de usuarios** usa **Exportar usuarios** o **Importar y sincronizar**. Exportar, previsualizar la importación y aplicar los cambios requieren confirmar la contraseña del administrador **de la instalación actual**. No se sincroniza la contraseña de `admin` ni se copia la clave maestra o la configuración del servidor.
+
+Con **Incluir contraseñas**, se genera un archivo `.fksync` cifrado con AES-256-GCM y una clave de transferencia independiente. La derivación usa PBKDF2-SHA256, 600.000 iteraciones y sal aleatoria; el formato autentica el contenido. Elige una clave fuerte o usa **Generar clave de transferencia**, consérvala y entrégala por separado al operador de la otra instalación. Ambas instalaciones pueden tener contraseñas administrativas y claves maestras diferentes. El archivo se abre con su clave de transferencia y, al aplicar, sus secretos se vuelven a cifrar con la clave local protegida por DPAPI.
+
+**AD no permite recuperar las contraseñas actuales de sus usuarios.** A partir de esta versión se guardan cifradas las contraseñas creadas/restablecidas por el gestor. Para exportarlas se compara el dominio, GUID y versión de replicación de `pwdLastSet`; la cuenta Windows debe poder leer esos metadatos. Las cuentas cuya contraseña no existe en el gestor, cambió fuera de él, fue modificada al primer inicio obligatorio, no puede verificarse o está protegida quedan fuera del archivo con contraseñas. La interfaz informa cuántas se omitieron. Si no hay ninguna disponible, la exportación se rechaza. No se inventan claves ni se restablecen cuentas para exportar. Las cuentas anteriores a 1.2.0 no tienen claves almacenadas; para incorporar una, restablécela explícitamente desde el directorio, sabiendo que reemplaza su contraseña vigente.
+
+Las instalaciones que consultan el **mismo AD** comparten naturalmente las cuentas. Si el archivo coincide con el mismo dominio, GUID y versión de contraseña, la importación sincroniza la copia local sin volver a cambiar la clave en AD. Un archivo antiguo o un controlador cuya versión aún no coincide se rechaza; comprueba replicación y vuelve a exportar. En un dominio diferente, la vista previa indica las altas y contraseñas que se restablecerán. AD puede rechazarlas por su política o permisos; no se omiten esos controles. Las altas y restablecimientos conservan el cambio obligatorio al próximo inicio de sesión; cuando el usuario cambie su clave el gestor ya no podrá exportar aquella contraseña inicial como vigente.
+
+El CSV UTF-8 **sin contraseñas** utiliza exactamente `username,name,department,enabled`; `enabled` acepta true/false o 1/0. Se admite coma o punto y coma. Las contraseñas en CSV no se aceptan: usa `.fksync`. Los campos exportados que podrían interpretarse como fórmulas de hoja de cálculo se escapan. Los nombres de cuenta se usan como clave de conciliación (sin distinguir mayúsculas); no se renombran, eliminan ni asignan grupos. Se actualizan nombre mostrado, departamento y habilitación/deshabilitación. Las cuentas ausentes del archivo permanecen intactas. Cada archivo admite hasta 500 cuentas y 1 MiB.
+
+La vista previa no hace cambios y caduca en 15 minutos, está ligada a la sesión y se utiliza una vez. Se verifica de nuevo el directorio y las versiones de contraseña antes de aplicar. Revisa especialmente los cambios de estado y los restablecimientos. La importación se procesa en segundo plano dentro de la aplicación y registra su progreso en **Historial de importaciones**. Mantén la ventana abierta. Si hay un fallo o se cierra la aplicación, el lote queda parcial/interrumpido y no se reintenta automáticamente; comprueba AD antes de previsualizar otra vez. No existe transacción distribuida ni rollback global de AD. En un dominio con administradores concurrentes pueden producirse cambios externos durante el lote; la comprobación de metadatos es una detección de cambios, no una autenticación de cada contraseña.
+
+La acción **Consultar contraseña administrada** requiere reautenticación y muestra la clave temporalmente solo si está disponible y su versión sigue vigente. No aparece en listados, auditoría, respuestas de vista previa, CSV ni resultados de importación. El archivo `.fksync` es portátil deliberadamente; su contenido y la clave de transferencia permiten conocer sus contraseñas, por lo que deben entregarse por canales seguros a las personas autorizadas.
 
 ## Instalar y abrir
 
