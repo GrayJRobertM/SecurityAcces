@@ -16,7 +16,8 @@ def call_ad(action, **values):
     script = Path(__file__).parent / 'windows' / 'directory.ps1'
     try:
         result = subprocess.run(['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script)],
-                                input=json.dumps(data), capture_output=True, text=True, encoding='utf-8', timeout=45)
+                                input=json.dumps(data), capture_output=True, text=True, encoding='utf-8', timeout=45,
+                                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         response = json.loads(result.stdout.lstrip('\ufeff'))
         if result.returncode or not response.get('ok'):
             raise DirectoryError('Active Directory rechazó la operación. Revisa permisos, política y registros de Windows.')

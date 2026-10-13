@@ -67,7 +67,8 @@ def signed_files(profile, configuration):
         def run(step):
             try:
                 result=subprocess.run(['powershell.exe','-NoLogo','-NoProfile','-NonInteractive','-File',str(BASE/'windows'/'sign-rdp.ps1')],
-                                      input=json.dumps(dict(data,step=step)),capture_output=True,text=True,encoding='utf-8',timeout=60)
+                                      input=json.dumps(dict(data,step=step)),capture_output=True,text=True,encoding='utf-8',timeout=60,
+                                      creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
                 result_data=json.loads(result.stdout.lstrip('\ufeff'))
                 if result.returncode or not result_data.get('ok'):
                     raise RDPError('No se pudo firmar. Revisa el certificado, su clave privada, su vigencia y permisos de la cuenta de servicio.')
@@ -81,7 +82,8 @@ def signed_files(profile, configuration):
             raise RDPError('rdpsign no produjo una firma RDP verificable.')
         config=dict(configuration,rdpSha256=hashlib.sha256(signed).hexdigest(),signerSha256=result['scriptSignerSha256'])
         encoded=base64.b64encode(json.dumps(config).encode()).decode()
-        template=(BASE/'windows'/'Connect-RDP.template.ps1').read_text()
+        template_name='Connect-LocalRDP.template.ps1' if configuration.get('local') else 'Connect-RDP.template.ps1'
+        template=(BASE/'windows'/template_name).read_text()
         launcher.write_text(template.replace('__CONFIG_BASE64__',encoded),encoding='utf-8-sig')
         run('script')
         return signed,launcher.read_bytes()
@@ -95,6 +97,8 @@ def make_package(host,username,port,configuration=None,demo=False):
         signed,launcher=signed_files(profile,configuration)
         files={'Conexion.rdp':signed,'Conectar.ps1':launcher,
                'LEEME.txt':('Freshkampo Access · Cliente RDP firmado\r\n\r\nExtrae el ZIP en una carpeta privada. Verifica el editor de Conectar.ps1.\r\nEjecuta en Windows PowerShell: .\\Conectar.ps1\r\nNo uses ExecutionPolicy Bypass ni alteres el RDP firmado.\r\nLa primera vez pide el código de activación entregado por separado.\r\nRequiere acceso HTTPS al gestor antes de la caducidad indicada por TI.\r\nLa activación se utiliza una sola vez; guarda la contraseña en el Administrador de credenciales de Windows de tu usuario, para este equipo y servidor.\r\nLos siguientes accesos usan esa credencial local, hasta que cambie la contraseña o la borres.\r\nPara retirarla, usa el Administrador de credenciales de Windows.\r\nLa firma no garantiza permisos RDP ni validez de la contraseña. Se respetan NLA, certificados y políticas de Windows.\r\n').encode('utf-8')}
+        if configuration and configuration.get('local'):
+            files['LEEME.txt']=('Freshkampo Access · Cliente RDP local firmado\r\nExtrae el ZIP en una carpeta privada y ejecuta .\\Conectar.ps1 en Windows PowerShell.\r\nFunciona solo en el servidor y con la cuenta Windows que lo generó. No requiere portal ni código de activación.\r\nLa contraseña está protegida con DPAPI, nunca en texto claro. Windows guarda la credencial para TERMSRV/destino.\r\nNo uses ExecutionPolicy Bypass. Requiere confianza válida en el certificado de firma de código.\r\nSe respetan NLA, certificados y políticas Windows. La firma no valida la contraseña ni habilita MFA.\r\nPara retirar el acceso, elimina la credencial en el Administrador de credenciales de Windows y cambia la contraseña de la cuenta si corresponde.\r\n').encode('utf-8')
     output=io.BytesIO()
     with ZipFile(output,'w',ZIP_DEFLATED) as archive:
         for name,content in files.items():archive.writestr(name,content)

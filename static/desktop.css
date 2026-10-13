@@ -1,0 +1,7 @@
+.desktop-setup{max-width:900px;margin:var(--fk-space-8) auto;padding:var(--fk-space-6)}
+.desktop-setup .brand{margin-bottom:var(--fk-space-8)}
+.desktop-setup fieldset{border:1px solid var(--fk-global-border-subtle);border-radius:var(--fk-radius-md);margin:var(--fk-space-6) 0;padding:var(--fk-space-6)}
+.desktop-setup legend{font-weight:600;padding:0 var(--fk-space-2)}
+.desktop-fields{display:grid;grid-template-columns:1fr 1fr;gap:var(--fk-space-6)}
+.desktop-setup select{width:100%}
+@media(max-width:767px){.desktop-fields{grid-template-columns:1fr}.desktop-setup{margin:var(--fk-space-4) auto;padding:var(--fk-space-4)}}

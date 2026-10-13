@@ -122,6 +122,8 @@ def create_app(overrides=None):
 
     @app.before_request
     def protect():
+        if app.config.get('DESKTOP') and request.path.startswith(('/api/telemetry/events','/api/collectors','/api/rdp/redeem')):
+            return jsonify(error='Esta instalación solo admite operación local.'),403
         if request.path == '/api/telemetry/events' and request.method == 'POST':
             request.max_content_length=1048576
             return None  # Dedicated per-server collector credentials, validated in endpoint.
@@ -176,7 +178,7 @@ def create_app(overrides=None):
     @app.get('/api/session')
     def status():
         row = db().execute('SELECT expires FROM sessions WHERE token=?', (session.get('auth',''),)).fetchone()
-        return jsonify(csrf=session['csrf'], authenticated=bool(row and row[0]>time.time()), mode=app.config['MODE'],
+        return jsonify(csrf=session['csrf'], authenticated=bool(row and row[0]>time.time()), mode=app.config['MODE'], desktop=bool(app.config.get('DESKTOP')),
                        setup=bool(db().execute('SELECT 1 FROM admin').fetchone()))
 
     @app.post('/api/login')
@@ -299,6 +301,10 @@ def create_app(overrides=None):
 
     @app.get('/api/rdp/status')
     def rdp_status():
+        if app.config.get('DESKTOP'):
+            return jsonify(demo=app.config['MODE']=='demo', desktop=True,
+                           configured=os.name=='nt' and bool(os.environ.get('FK_RDP_CERT_HASH')),
+                           message='Firma con los certificados configurados. Credenciales protegidas para este equipo y cuenta Windows.')
         return jsonify(demo=app.config['MODE']=='demo', configured=rdp_configured(), activationMinutes=30,
                        message='La firma requiere Windows, certificado RDP, certificado de firma de código y portal HTTPS.')
 
@@ -322,7 +328,7 @@ def create_app(overrides=None):
             audit('vista previa RDP',host)
             signed=False
         else:
-            if not request.is_secure:
+            if not request.is_secure and not app.config.get('DESKTOP'):
                 return jsonify(error='Genera paquetes con credenciales desde el portal HTTPS.'),403
             if throttled('rdp-export', 10):return jsonify(error='Demasiados intentos. Espera 15 minutos.'),429
             supplied=data.get('admin_password','')
@@ -334,6 +340,21 @@ def create_app(overrides=None):
             code=data.get('activation_code')
             if not isinstance(password,str) or not 1<=len(password)<=256 or '\x00' in password:
                 raise ValueError('Indica la contraseña vigente de la cuenta para RDP.')
+            if app.config.get('DESKTOP'):
+                from windows_native import dpapi, machine_identity
+                identity=machine_identity()
+                identifier=str(uuid.uuid4())
+                credentials=dpapi(json.dumps(dict(host=host,username=username,password=password)).encode())
+                configuration=dict(id=identifier,host=host,username=username,local=True,
+                                   identity=identity,credential=base64.b64encode(credentials).decode())
+                package=make_package(host,username,port,configuration=configuration)
+                db().execute('INSERT INTO rdp_clients(id,host,username,code_hash,secret,expires,consumed) VALUES (?,?,?,?,NULL,?,1)',
+                             (identifier,host,username,'local-dpapi',time.time()))
+                audit('generar cliente RDP local firmado',host)
+                response=send_file(io.BytesIO(package),mimetype='application/zip',as_attachment=True,
+                                   download_name='Freshkampo-RDP-local-firmado.zip')
+                response.headers['X-RDP-Signed']='true'
+                return response
             if not isinstance(code,str) or not 15<=len(code)<=128 or code.strip()!=code or code==password or not all(any(c in group for c in code) for group in CATEGORIES):
                 raise ValueError('El código de activación debe tener 15 a 128 caracteres con mayúsculas, minúsculas, números y símbolos, sin espacios externos, y ser diferente de la contraseña RDP.')
             identifier=str(uuid.uuid4())
