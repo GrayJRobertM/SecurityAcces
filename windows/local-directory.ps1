@@ -15,6 +15,12 @@ try {
     $scope='local:'+$machineGuid.ToLowerInvariant()
     # Membership lookup must succeed; unresolved group members cause a fail-closed response.
     $admins=@(Get-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop | ForEach-Object {$_.SID.Value})
+    function SecurePassword($plain) {
+        $value=[Security.SecureString]::new()
+        foreach ($character in ([string]$plain).ToCharArray()) {$value.AppendChar($character)}
+        $value.MakeReadOnly()
+        return $value
+    }
     function Protected($user) {
         $rid=[long]($user.SID.Value.Split('-')[-1])
         return ($rid -lt 1000 -or $user.SID.Value -eq $identity.User.Value -or $admins -contains $user.SID.Value -or [string]$user.PrincipalSource -ne 'Local')
@@ -54,7 +60,7 @@ try {
         }
         'create' {
             if ([string]$request.username -notmatch '^[a-zA-Z0-9._-]{1,20}$' -or [string]$request.username -match '\.$' -or [string]$request.username -in '.','..') {throw 'Invalid username'}
-            $secure=ConvertTo-SecureString -String $request.password -AsPlainText -Force
+            $secure=SecurePassword $request.password
             $enabled=if ($request.PSObject.Properties.Name -contains 'enabled') {[bool]$request.enabled} else {$true}
             $stage='create'
             $user=New-LocalUser -Name $request.username -FullName $request.name -Description ([string]$request.department) -Password $secure -Disabled:(-not $enabled) -ErrorAction Stop
@@ -68,7 +74,7 @@ try {
             $user=Scoped $request.identifier
             $stage='modify'
             switch ($request.action) {
-                'reset' {$secure=ConvertTo-SecureString -String $request.password -AsPlainText -Force;Set-LocalUser -SID $user.SID -Password $secure -ErrorAction Stop}
+                'reset' {$secure=SecurePassword $request.password;Set-LocalUser -SID $user.SID -Password $secure -ErrorAction Stop}
                 'enable' {Enable-LocalUser -SID $user.SID -ErrorAction Stop}
                 'disable' {Disable-LocalUser -SID $user.SID -ErrorAction Stop}
                 'unlock' {$entry=UserObject $user;$entry.InvokeSet('IsAccountLocked',$false);$entry.CommitChanges()}
