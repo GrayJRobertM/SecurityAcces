@@ -55,3 +55,11 @@
 - Nombre Metakampo Access en interfaz, asistente, ventanas, instalador y descargas.
 - Icono M multicolor basado en la imagen del usuario en la interfaz, favicon y ejecutable/instalador Windows.
 - Identificadores de instalación, rutas de datos y formatos cifrados conservados para actualizar sin perder compatibilidad.
+
+# 1.3.0 · Usuarios locales y Active Directory
+
+- Asistente con modos Usuarios locales, AD y Demostración; cambio con reautenticación y datos separados por entorno.
+- Adaptador local SAM por SID: crear cuentas estándar, restablecer, habilitar/deshabilitar y desbloquear.
+- Protección de cuentas integradas, administradores y cuenta actual; rechaza controladores de dominio y exige elevación para modo local.
+- Sincronización cifrada y consulta de claves con detección de cambios de contraseña local; cuenta RDP EQUIPO\usuario.
+- Lector Security, métricas y mapa activos en ambos modos reales.

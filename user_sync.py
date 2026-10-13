@@ -34,7 +34,7 @@ def install(database):
         CREATE TABLE IF NOT EXISTS sync_jobs(id TEXT PRIMARY KEY,owner TEXT NOT NULL,status TEXT NOT NULL,total INTEGER NOT NULL,completed INTEGER NOT NULL DEFAULT 0,results TEXT NOT NULL DEFAULT '[]',created REAL NOT NULL);
         ''')
         db.execute('INSERT OR IGNORE INTO sync_instance VALUES(1,?)',(str(uuid.uuid4()),))
-        db.execute("UPDATE sync_jobs SET status='interrumpido: verificar AD antes de reintentar' WHERE status='aplicando'")
+        db.execute("UPDATE sync_jobs SET status='interrumpido: verificar Windows/AD antes de reintentar' WHERE status='aplicando'")
 
 
 def remember(db,key,identifier,username,password,domain_guid,stamp):
@@ -73,7 +73,7 @@ def decrypt_package(raw,password):
 def clean_user(item):
     if not isinstance(item,dict) or set(item)-set(COLUMNS+['password','source_id','stamp','domain_guid']):raise ValueError('Columnas de usuario no admitidas.')
     result={}
-    for field,maximum in [('username',20),('name',120),('department',120)]:
+    for field,maximum in [('username',20),('name',120),('department',256)]:
         value=item.get(field,'')
         if not isinstance(value,str) or len(value)>maximum or any(ord(c)<32 for c in value):raise ValueError('Campo de usuario inválido: '+field)
         result[field]=value.strip()
@@ -117,23 +117,24 @@ def csv_bytes(users):
 
 
 def snapshot(users):
-    values=[{field:user.get(field) for field in ['id']+COLUMNS} for user in users]
+    values=[{field:user.get(field) for field in ['id','protected']+COLUMNS} for user in users]
     return hashlib.sha256(json.dumps(sorted(values,key=lambda row:row['username'].casefold()),sort_keys=True).encode()).hexdigest()
 
 
-def register(app,db,audit,throttled,fresh_password):
+def register(app,db,audit,throttled,fresh_password,native_directory=None):
+    native_directory=native_directory or (lambda action,**values:call_ad(action,**values))
     key=app.config['VAULT_KEY']
     app.sync_threads=[]
     def users():
-        return (call_ad('list') or []) if app.config['MODE']=='ad' else [dict(row) for row in db().execute('SELECT * FROM users')]
+        return (native_directory('list') or []) if app.config['MODE']!='demo' else [dict(row) for row in db().execute('SELECT * FROM users')]
     def reauth(data):
         if throttled('user-sync',15):return False
         supplied=data.get('admin_password','')
         admin=db().execute('SELECT hash FROM admin WHERE id=1').fetchone()
         return isinstance(supplied,str) and len(supplied)<=256 and admin and check_password_hash(admin[0],supplied)
     def stamps(identifiers):
-        if app.config['MODE']=='ad':
-            value=call_ad('stamps',identifiers=identifiers)
+        if app.config['MODE']!='demo':
+            value=native_directory('stamps',identifiers=identifiers)
             return value['domain_guid'],{row['id']:row['stamp'] for row in value['users']}
         domain=db().execute('SELECT identifier FROM sync_instance').fetchone()[0]
         return domain,{row['user_id']:row['stamp'] for row in db().execute('SELECT user_id,stamp FROM managed_passwords')}
@@ -143,7 +144,7 @@ def register(app,db,audit,throttled,fresh_password):
         result={}
         for user in current:
             stored=records.get(user['id'])
-            if stored and stored['domain_guid']==domain and stored['stamp'] and versions.get(user['id'])==stored['stamp']:
+            if not user.get('protected') and stored and stored['domain_guid']==domain and stored['stamp'] and versions.get(user['id'])==stored['stamp']:
                 result[user['id']]=dict(password=unseal(key,'user-sync:'+user['id'],stored['secret']),stamp=stored['stamp'],domain_guid=domain)
         return result,domain,versions
 
@@ -151,8 +152,8 @@ def register(app,db,audit,throttled,fresh_password):
     def export():
         data=request.get_json(silent=True) or {}
         if not isinstance(data,dict) or not reauth(data):return jsonify(error='Confirma la contraseña del administrador de esta instalación.'),403
-        current=users()
-        if len(current)>MAX_USERS:raise ValueError('Máximo 500 usuarios por archivo; configura una OU de alcance menor.')
+        current=[user for user in users() if not user.get('protected')]
+        if len(current)>MAX_USERS:raise ValueError('Máximo 500 usuarios por archivo; reduce el alcance del directorio.')
         include=data.get('include_passwords',True)
         if type(include) is not bool:raise ValueError('Selección de exportación inválida.')
         omitted=0
@@ -163,7 +164,7 @@ def register(app,db,audit,throttled,fresh_password):
             for user in current:
                 if user['id'] not in known:omitted+=1;continue
                 exported.append(dict({field:user.get(field,'') for field in COLUMNS},enabled=bool(user['enabled']),source_id=user['id'],**known[user['id']]))
-            if not exported:return jsonify(error='No hay contraseñas administradas verificables. Restablece primero las cuentas que deseas sincronizar desde el Directorio; las claves actuales de AD no se pueden leer.'),409
+            if not exported:return jsonify(error='No hay contraseñas administradas verificables. Restablece primero las cuentas que deseas sincronizar desde el Directorio; las claves actuales de Windows/AD no se pueden leer.'),409
             raw=encrypt_package(dict(version=1,users=exported,includes_passwords=True,created=datetime.now(timezone.utc).isoformat()),transfer)
             filename='Metakampo-usuarios-con-claves.fksync'
         else:
@@ -200,6 +201,8 @@ def register(app,db,audit,throttled,fresh_password):
             if password is not None and (len(password)<length or not all(any(char in category for char in password) for category in CATEGORIES)):
                 raise ValueError('Una contraseña no cumple la política vigente. No se importó ningún usuario.')
             existing=by_name.get(item['username'].casefold())
+            if existing and existing.get('protected'):
+                raise ValueError('El archivo intenta modificar una cuenta protegida. No se importó ningún usuario.')
             if password and existing and item['domain_guid']==domain and item['source_id']==existing['id'] and (not item['stamp'] or item['stamp']!=versions.get(existing['id'])):
                 raise ValueError('Una contraseña del archivo no coincide con la versión actual del mismo dominio, o no puede verificarse. Actualiza el archivo y comprueba la replicación; no se restauran contraseñas antiguas automáticamente.')
             if password:
@@ -250,17 +253,17 @@ def register(app,db,audit,throttled,fresh_password):
                         identifier=item['target_id'];password=item['password'];native=None
                         if not identifier:
                             password=password or fresh_password()
-                            if app.config['MODE']=='ad':
-                                native=call_ad('create',name=item['name'],username=item['username'],department=item['department'],password=password,enabled=item['enabled']);identifier=native['id']
+                            if app.config['MODE']!='demo':
+                                native=native_directory('create',name=item['name'],username=item['username'],department=item['department'],password=password,enabled=item['enabled']);identifier=native['id']
                             else:
                                 identifier=str(uuid.uuid4());db().execute('INSERT INTO users VALUES(?,?,?,?,?)',(identifier,item['name'],item['username'],item['department'],int(item['enabled'])));db().commit()
                         else:
                             if item['metadata']:
-                                if app.config['MODE']=='ad':call_ad('update',identifier=identifier,name=item['name'],department=item['department'],enabled=item['enabled'])
+                                if app.config['MODE']!='demo':native_directory('update',identifier=identifier,name=item['name'],department=item['department'],enabled=item['enabled'])
                                 else:db().execute('UPDATE users SET name=?,department=?,enabled=? WHERE id=?',(item['name'],item['department'],int(item['enabled']),identifier));db().commit()
-                            if item['reset'] and app.config['MODE']=='ad':native=call_ad('reset',identifier=identifier,password=password)
+                            if item['reset'] and app.config['MODE']!='demo':native=native_directory('reset',identifier=identifier,password=password)
                         if password:
-                            if app.config['MODE']=='ad':
+                            if app.config['MODE']!='demo':
                                 if native:domain,stamp=native.get('domain_guid',''),native.get('stamp','')
                                 else:
                                     domain,versions=stamps([identifier]);stamp=versions.get(identifier,'')

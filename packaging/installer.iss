@@ -1,4 +1,4 @@
-#define AppVersion "1.2.1"
+#define AppVersion "1.3.0"
 [Setup]
 AppId={{72FBC267-2574-4268-AB77-36B8374BCA7D}
 AppName=Metakampo Access

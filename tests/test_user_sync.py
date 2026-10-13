@@ -136,7 +136,7 @@ class SyncTests(unittest.TestCase):
             if action=='list':return [dict(id=identifier,username='sync.user',name='Cuenta',department='TI',enabled=True)]
             if action=='stamps':return dict(domain_guid=domain,users=[dict(id=identifier,stamp='2:100:origin')])
             raise AssertionError('Shared AD credentials must not be reset')
-        with patch('user_sync.call_ad',side_effect=ad):
+        with patch('app.call_ad',side_effect=ad):
             preview=self.preview(raw);self.assertEqual(preview.json['resets'],0)
             applied=self.post('user-sync/apply',dict(plan=preview.json['plan'],admin_password=self.admin));self.assertEqual(applied.status_code,202,applied.json)
             self.assertEqual(self.wait(applied.json['job'])['status'],'completado')
@@ -151,7 +151,7 @@ class SyncTests(unittest.TestCase):
         def ad(action,**kwargs):
             if action=='list':return [dict(id=identifier,username='external',name='Cuenta',department='TI',enabled=True)]
             return dict(domain_guid=domain,users=[dict(id=identifier,stamp='new-version')])
-        with patch('user_sync.call_ad',side_effect=ad):
+        with patch('app.call_ad',side_effect=ad):
             result=self.post('user-sync/export',dict(admin_password=self.admin,transfer_password=self.transfer,include_passwords=True))
         self.assertEqual(result.status_code,409)
 
@@ -164,7 +164,7 @@ class SyncTests(unittest.TestCase):
             if action=='list':return [dict(id=identifier,username='sync.user',name='Cuenta',department='TI',enabled=True)]
             if action=='stamps':return dict(domain_guid=domain,users=[dict(id=identifier,stamp='new')])
             self.fail('Stale preview must not mutate AD')
-        with patch('user_sync.call_ad',side_effect=ad):
+        with patch('app.call_ad',side_effect=ad):
             self.assertEqual(self.preview(raw).status_code,400)
 
     def test_password_reset_after_preview_requires_new_preview(self):

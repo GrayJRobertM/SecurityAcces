@@ -18,7 +18,7 @@ from threading import Lock
 
 from flask import Flask, g, jsonify, request, session, send_file
 from werkzeug.security import check_password_hash, generate_password_hash
-from directory import call_ad, DirectoryError
+from directory import call_ad, call_local, DirectoryError
 from security import generate_password, fingerprint, seal, unseal, CATEGORIES
 from rdp import RDPError, make_package, validate_connection, portal_url, configured as rdp_configured
 
@@ -36,15 +36,17 @@ def create_app(overrides=None):
                       SESSION_COOKIE_SECURE=os.environ.get('FK_MODE') == 'ad', PERMANENT_SESSION_LIFETIME=timedelta(minutes=15),
                       TRUSTED_HOSTS=os.environ.get('FK_TRUSTED_HOSTS', 'localhost,127.0.0.1').split(','))
     app.config.update(overrides or {})
-    if app.config['MODE'] not in ('demo', 'ad'):
-        raise ValueError('FK_MODE debe ser demo o ad.')
+    if app.config['MODE'] not in ('demo', 'ad', 'local'):
+        raise ValueError('FK_MODE debe ser demo, ad o local.')
+    if app.config['MODE']=='local' and not app.config.get('DESKTOP'):
+        raise ValueError('El modo local solo se utiliza desde la aplicación instalada.')
     folder = Path(app.config['DATA_DIR'])
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     raw_key = os.environ.get('FK_MASTER_KEY')
     if raw_key:
         key = base64.b64decode(raw_key, validate=True)
-    elif app.config['MODE'] == 'ad':
-        raise ValueError('En modo AD se requiere FK_MASTER_KEY (32 bytes en base64).')
+    elif app.config['MODE'] in ('ad','local'):
+        raise ValueError('En modo real se requiere FK_MASTER_KEY (32 bytes en base64).')
     else:
         keypath = folder / 'demo.key'
         if not keypath.exists():
@@ -165,7 +167,7 @@ def create_app(overrides=None):
 
     @app.errorhandler(DirectoryError)
     def ad_error(exc):
-        audit('operación AD', '', 'error o resultado por verificar')
+        audit('operación de directorio', '', 'error o resultado por verificar')
         return jsonify(error=str(exc)), 502
 
     @app.errorhandler(RDPError)
@@ -215,9 +217,12 @@ def create_app(overrides=None):
         session.clear()
         return jsonify(ok=True)
 
+    def native_directory(action,**values):
+        return (call_local if app.config['MODE']=='local' else call_ad)(action,**values)
+
     @app.get('/api/users')
     def users():
-        values = call_ad('list') if app.config['MODE']=='ad' else [dict(r) for r in db().execute('SELECT * FROM users ORDER BY name')]
+        values = native_directory('list') if app.config['MODE']!='demo' else [dict(r) for r in db().execute('SELECT * FROM users ORDER BY name')]
         return jsonify(users=values or [])
 
     @app.post('/api/users')
@@ -227,8 +232,8 @@ def create_app(overrides=None):
         if not re.fullmatch(r'[a-zA-Z0-9._-]{1,20}',username):
             raise ValueError('El usuario admite letras, números, punto, guion y guion bajo; máximo 20 caracteres.')
         password = fresh_password()
-        if app.config['MODE']=='ad':
-            result=call_ad('create', name=name, username=username, department=department, password=password)
+        if app.config['MODE']!='demo':
+            result=native_directory('create', name=name, username=username, department=department, password=password)
             if result and result.get('id'):
                 remember_user_password(db(),key,result['id'],username,password,result.get('domain_guid',''),result.get('stamp',''))
         else:
@@ -236,19 +241,23 @@ def create_app(overrides=None):
             db().execute('INSERT INTO users VALUES (?,?,?,?,1)',(identifier,name,username,department))
             remember_user_password(db(),key,identifier,username,password,db().execute('SELECT identifier FROM sync_instance').fetchone()[0],str(uuid.uuid4()))
         audit('crear usuario',username)
-        return jsonify(password=password, message='Usuario creado. Debe cambiar la contraseña al iniciar sesión.'),201
+        return jsonify(password=password, message='Usuario local creado. La contraseña respeta la política de Windows.' if app.config['MODE']=='local' else 'Usuario creado. Debe cambiar la contraseña al iniciar sesión.'),201
 
     @app.post('/api/users/<identifier>/<action>')
     def user_action(identifier,action):
         if action not in ('reset','enable','disable','unlock'):
             raise ValueError('Operación no permitida.')
-        try:
-            uuid.UUID(identifier)
-        except ValueError:
-            raise ValueError('Identificador inválido.')
+        if app.config['MODE']=='local':
+            if not re.fullmatch(r'S-1-5-21-\d+-\d+-\d+-\d+',identifier):
+                raise ValueError('Identificador local inválido.')
+        else:
+            try:
+                uuid.UUID(identifier)
+            except ValueError:
+                raise ValueError('Identificador inválido.')
         password = fresh_password() if action=='reset' else None
-        if app.config['MODE']=='ad':
-            result=call_ad(action, identifier=identifier, **({'password':password} if password else {}))
+        if app.config['MODE']!='demo':
+            result=native_directory(action, identifier=identifier, **({'password':password} if password else {}))
             if password and result and result.get('username'):
                 remember_user_password(db(),key,identifier,result['username'],password,result.get('domain_guid',''),result.get('stamp',''))
         else:
@@ -435,7 +444,7 @@ def create_app(overrides=None):
 
     register_telemetry(app,db,audit,throttled)
     register_access_map(app,db)
-    register_user_sync(app,db,audit,throttled,fresh_password)
+    register_user_sync(app,db,audit,throttled,fresh_password,native_directory)
     app.db_path = database
     return app
 

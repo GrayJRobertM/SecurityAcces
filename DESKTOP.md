@@ -1,6 +1,6 @@
 # Metakampo Access · Aplicación Windows Server
 
-Versión 1.2.1, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+Versión 1.3.0, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
 
 ## Importar y exportar usuarios con contraseñas
 
@@ -24,7 +24,7 @@ La acción **Consultar contraseña administrada** requiere reautenticación y mu
 2. Abre **Metakampo Access** desde Inicio con la cuenta Windows que administrará la aplicación. Esa cuenta será propietaria de sus datos y debe conservarse. No hay contraseña administrativa predeterminada.
 3. Elige **Demostración** para probar sin tocar AD, o **Active Directory** para operar con tu dominio. En AD necesitas RSAT Active Directory, el FQDN del controlador, el DN de la OU autorizada y el sufijo UPN. El asistente comprueba el módulo, el acceso al controlador y que la OU existe; no cambia cuentas como prueba de permisos.
 4. Crea la contraseña de `admin`, con al menos 15 caracteres, mayúsculas, minúsculas, números y símbolos. Es distinta de la contraseña Windows. Inicia sesión en la aplicación con ella.
-5. Para ajustar dominio/OU/certificados después, cierra el programa y abre **Configurar Metakampo Access** desde Inicio. Debes confirmar la contraseña administrativa actual. Conserva el modo demo/AD de la instalación.
+5. Para ajustar dominio/OU/certificados después, cierra el programa y abre **Configurar Metakampo Access** desde Inicio. Debes confirmar la contraseña administrativa actual. Puedes elegir Usuarios locales, Active Directory o Demostración; cada entorno conserva sus datos separados.
 
 ## Exclusivamente en este servidor
 
@@ -75,3 +75,17 @@ Fuentes: [DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dp
 ## Actualización de marca 1.2.1
 
 Metakampo sustituye el nombre visible anterior y usa el emblema M proporcionado por el usuario. El icono transparente se adaptó desde esa imagen; el original se conserva en static/metakampo-logo-original.png. Se conservan AppId, carpeta de instalación y datos `%LOCALAPPDATA%\Freshkampo\Access`, entropía DPAPI e identificadores del formato .fksync para abrir instalaciones y exportaciones anteriores. No se migra ni restablece la bóveda. Cierra el programa y actualiza con el mismo usuario Windows y equipo.
+
+## Modos de directorio desde 1.3.0
+
+- **Usuarios locales · Este servidor**: usa las cuentas SAM del servidor instalado, en WORKGROUP o como miembro de dominio. No necesita controlador, OU ni RSAT AD. Abre Metakampo **como administrador**, con la misma cuenta Windows propietaria de la instalación. No funciona en un controlador de dominio. Los usuarios se identifican por SID y RDP usa EQUIPO\usuario. Crea cuentas estándar en el grupo Usuarios; no añade Administradores ni Usuarios de escritorio remoto. La política local controla requisitos/expiración de contraseña; el gestor local no impone cambio obligatorio al primer inicio. El campo Departamento corresponde a la descripción de la cuenta Windows.
+- **Active Directory · Uso real**: conserva el adaptador existente y su OU autorizada, herramientas RSAT, controlador, UPN y permisos delegados. Se mantiene el cambio obligatorio al siguiente inicio al crear/restablecer.
+- **Demostración**: datos ficticios; no modifica Windows ni AD.
+
+Para cambiar de modo cierra el programa y abre **Configurar Metakampo Access** (como administrador para modo local). Confirma la contraseña del administrador del entorno actual. La clave de instalación/DPAPI se conserva. Las bases y bóvedas de cada modo quedan separadas, y al regresar reaparecen sus datos. No se convierten ni migran automáticamente cuentas de AD a locales. La primera visita al nuevo entorno inicializa su administrador con la misma contraseña; un destino existente con contraseña diferente impide el cambio. No cierres el programa durante una importación.
+
+En modo local las cuentas integradas (RID inferior a 1000), miembros directos de Administradores, cuentas no locales y la cuenta Windows actual son **protegidas**: se visualizan, pero el backend bloquea cambios y las excluye de exportaciones. La pertenencia al grupo Administradores debe poder leerse; si falla se rechaza la operación. No se elimina ningún usuario ni se cambia pertenencia de cuentas existentes a grupos.
+
+Importación/exportación cifrada y reautenticación funcionan en ambos modos. Para locales se compara la identidad de máquina, SID y PasswordLastSet antes de exportar/consultar una contraseña administrada. Contraseñas desconocidas o cambiadas fuera del gestor no pueden recuperarse. Entre servidores las cuentas locales tienen SID diferentes: se crea o restablece la cuenta de destino según la vista previa. Esto no migra permisos, perfiles, grupos ni derechos RDP; no implica que las cuentas sean una única identidad distribuida. El paquete conserva los identificadores criptográficos de versiones previas.
+
+Dashboard/mapa leen el registro Security **del servidor instalado** tanto en local como en AD; requieren permisos de lectura y políticas de auditoría. No registran todos los servidores del dominio por seleccionar AD. RDP y firma siguen requiriendo certificados válidos y permisos Windows del usuario destino.

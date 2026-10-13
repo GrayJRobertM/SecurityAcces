@@ -22,15 +22,15 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.2.1'
+VERSION = '1.3.0'
 
 
 def validate_settings(data):
     if not isinstance(data, dict):
         raise ValueError('Configuración inválida.')
     mode = data.get('mode', 'ad')
-    if mode not in ('ad', 'demo'):
-        raise ValueError('Selecciona Active Directory o demostración.')
+    if mode not in ('ad', 'demo','local'):
+        raise ValueError('Selecciona usuarios locales, Active Directory o demostración.')
     result = dict(mode=mode)
     for name in ('server', 'ou', 'suffix', 'rdp_cert', 'script_cert', 'store'):
         value = data.get(name, '')
@@ -43,6 +43,8 @@ def validate_settings(data):
         result['suffix'] = hostname(result['suffix'])
         if not re.match(r'(?i)^OU=.+,DC=.+', result['ou']) or ';' in result['ou']:
             raise ValueError('Indica el DN completo de la OU, por ejemplo OU=Pruebas,DC=empresa,DC=local.')
+    if mode!='ad':
+        result.update(server='',ou='',suffix='')
     for name in ('rdp_cert', 'script_cert'):
         result[name] = result[name].replace(' ', '').upper()
         if result[name] and not re.fullmatch(r'(?:[A-F0-9]{40}|[A-F0-9]{64})', result[name]):
@@ -170,9 +172,7 @@ def setup_application(store, gate, on_ready):
             if not isinstance(password, str) or len(password) > 256:
                 raise ValueError('Contraseña inválida.')
             if store.values:
-                if settings['mode'] != store.values['settings']['mode']:
-                    raise ValueError('Esta instalación conserva su modo. Usa otra cuenta Windows para un entorno de pruebas separado.')
-                database = store.folder / settings['mode'] / 'access.sqlite3'
+                database = store.folder / store.values['settings']['mode'] / 'access.sqlite3'
                 with connection(database) as db:
                     admin = db.execute('SELECT hash FROM admin WHERE id=1').fetchone()
                 if not admin or not check_password_hash(admin[0], password):
@@ -190,15 +190,24 @@ def setup_application(store, gate, on_ready):
                 result = powershell(BASE / 'windows' / 'Check-Desktop.ps1', settings)
                 if not result['ad']:
                     raise ValueError('Instala RSAT Active Directory y verifica el controlador de dominio, la OU y los permisos de lectura.')
+            if settings['mode']=='local':
+                from directory import call_local
+                try:
+                    call_local('check')
+                except Exception:
+                    raise ValueError('Para usuarios locales, abre Metakampo como administrador en un Windows Server miembro o independiente. No admite controladores de dominio.') from None
             initial = not store.values
             previous = store.values
             store.values = dict(identity=store.identity,settings=settings,
                                 key=previous['key'] if previous else base64.b64encode(secrets.token_bytes(32)).decode())
             try:
                 real = store.application()
-                if initial:
-                    with connection(real.db_path) as db:
-                        db.execute('INSERT OR REPLACE INTO admin VALUES(1,?)', (generate_password_hash(password, method='pbkdf2:sha256:1000000'),))
+                with connection(real.db_path) as db:
+                    existing_admin=db.execute('SELECT hash FROM admin WHERE id=1').fetchone()
+                    if existing_admin and not check_password_hash(existing_admin[0],password):
+                        raise ValueError('El entorno de destino tiene otra contraseña administrativa. Confirma esa misma contraseña en ambos entornos antes de cambiar.')
+                    if not existing_admin:
+                        db.execute('INSERT INTO admin VALUES(1,?)',(generate_password_hash(password,method='pbkdf2:sha256:1000000'),))
                 store.save(settings)
             except Exception:
                 store.values = previous
@@ -275,7 +284,10 @@ def main():
         raise OSError('Metakampo Access ya está abierto en esta cuenta Windows.')
     collectors = []
     def ready(app):
-        if app.config['MODE'] == 'ad':
+        for old in collectors:
+            old.stop()
+        collectors.clear()
+        if app.config['MODE'] in ('ad','local'):
             collector = LocalCollector(app.db_path, folder)
             collectors.append(collector)
             collector.start()

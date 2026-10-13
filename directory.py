@@ -24,3 +24,20 @@ def call_ad(action, **values):
         return response.get('data')
     except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError) as exc:
         raise DirectoryError('No se pudo completar la operación con Active Directory. Verifica el resultado antes de reintentar.') from exc
+
+
+def call_local(action, **values):
+    if os.name != 'nt':
+        raise DirectoryError('Los usuarios locales requieren Windows Server con experiencia de escritorio.')
+    script = Path(__file__).parent / 'windows' / 'local-directory.ps1'
+    try:
+        result = subprocess.run(['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                input=json.dumps(dict(action=action, **values)), capture_output=True,
+                                text=True, encoding='utf-8', timeout=45,
+                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        response = json.loads(result.stdout.lstrip('\ufeff'))
+        if result.returncode or not response.get('ok'):
+            raise DirectoryError('Windows rechazó la operación local. Abre Metakampo como administrador; revisa cuentas protegidas, políticas y el estado real antes de reintentar. El modo local no admite controladores de dominio.')
+        return response.get('data')
+    except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError) as exc:
+        raise DirectoryError('No se pudo completar la operación local. Verifica el estado de Windows antes de reintentar.') from exc
