@@ -4,17 +4,27 @@ $ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 try {
+    # Resolve built-in modules from this PowerShell installation, independent of PSModulePath.
+    foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets','Microsoft.PowerShell.LocalAccounts')) {
+        Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$module,($module+'.psd1'))) -ErrorAction Stop
+    }
     $request=[Console]::In.ReadToEnd() | ConvertFrom-Json
     $os=Get-CimInstance Win32_OperatingSystem
     if ($os.ProductType -ne 3) { throw 'Requires member or standalone Windows Server' }
-    Import-Module Microsoft.PowerShell.LocalAccounts -ErrorAction Stop
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
     $elevated=([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    if (-not $elevated) { throw 'Elevation required' }
+    $reading=$request.action -in 'list','inventory'
+    if (-not $elevated -and -not $reading) { throw 'Elevation required' }
     $machineGuid=[string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Cryptography').MachineGuid
     $scope='local:'+$machineGuid.ToLowerInvariant()
-    # Membership lookup must succeed; unresolved group members cause a fail-closed response.
-    $admins=@(Get-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop | ForEach-Object {$_.SID.Value})
+    # Listing is independent of group-name resolution. Unverifiable rights stay read-only.
+    $admins=@();$adminsVerified=$false
+    try {
+        $admins=@(Get-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop | ForEach-Object {$_.SID.Value})
+        $adminsVerified=$true
+    } catch {
+        if (-not $reading) {throw 'Administrator membership unavailable'}
+    }
     function SecurePassword($plain) {
         $value=[Security.SecureString]::new()
         foreach ($character in ([string]$plain).ToCharArray()) {$value.AppendChar($character)}
@@ -23,7 +33,7 @@ try {
     }
     function Protected($user) {
         $rid=[long]($user.SID.Value.Split('-')[-1])
-        return ($rid -lt 1000 -or $user.SID.Value -eq $identity.User.Value -or $admins -contains $user.SID.Value -or [string]$user.PrincipalSource -ne 'Local')
+        return (-not $elevated -or -not $adminsVerified -or $rid -lt 1000 -or $user.SID.Value -eq $identity.User.Value -or $admins -contains $user.SID.Value -or [string]$user.PrincipalSource -ne 'Local')
     }
     function Scoped($identifier) {
         if ([string]$identifier -notmatch '^S-1-5-21-\d+-\d+-\d+-\d+$') { throw 'Invalid local identifier' }
@@ -43,12 +53,20 @@ try {
     $stage='dispatch'
     switch ($request.action) {
         'check' { $data=@{local=$true;computer=$env:COMPUTERNAME;scope=$scope} }
-        'list' {
-            $data=@(Get-LocalUser | ForEach-Object {
+        {$_ -in 'list','inventory'} {
+            $items=@(Get-LocalUser -ErrorAction Stop | ForEach-Object {
+                # Keep the account reference stable if an optional ADSI lookup throws.
+                $localUser=$_
                 $locked=$false
-                try {$locked=[bool](UserObject $_).InvokeGet('IsAccountLocked')} catch {}
-                @{id=$_.SID.Value;name=$(if ($_.FullName) {$_.FullName} else {$_.Name});username=$_.Name;department=[string]$_.Description;upn=($env:COMPUTERNAME+'\'+$_.Name);enabled=$_.Enabled;locked=$locked;protected=(Protected $_)}
+                try {$locked=[bool](UserObject $localUser).InvokeGet('IsAccountLocked')} catch {}
+                @{id=$localUser.SID.Value;name=$(if ($localUser.FullName) {$localUser.FullName} else {$localUser.Name});username=$localUser.Name;department=[string]$localUser.Description;upn=($env:COMPUTERNAME+'\'+$localUser.Name);enabled=$localUser.Enabled;locked=$locked;protected=(Protected $localUser)}
             })
+            if ($request.action -eq 'inventory') {
+                $warnings=@()
+                if (-not $elevated) {$warnings+='Abre Metakampo como administrador para realizar cambios. La lectura de cuentas sigue disponible.'}
+                if (-not $adminsVerified) {$warnings+='Windows no pudo verificar el grupo Administradores. Se muestran todas las cuentas en modo de solo lectura.'}
+                $data=@{users=@($items);source='windows-local';computer=$env:COMPUTERNAME;read_only=(-not $elevated -or -not $adminsVerified);warnings=@($warnings)}
+            } else {$data=@($items)}
         }
         'stamps' {
             $items=@()

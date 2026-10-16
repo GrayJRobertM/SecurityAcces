@@ -33,6 +33,7 @@ class LocalModeTests(unittest.TestCase):
         self.mock=patch('app.call_local',side_effect=self.native);self.native_mock=self.mock.start();self.addCleanup(self.mock.stop)
     def native(self,action,**kwargs):
         if action=='list':return self.users
+        if action=='inventory':return dict(users=self.users,source='windows-local',computer='PILOT',read_only=False,warnings=[])
         if action=='stamps':return dict(domain_guid=self.scope,users=[dict(id=u,stamp=self.stamp) for u in kwargs['identifiers']])
         if action in ('create','reset'):return dict(id=self.identifier,username='local.user',domain_guid=self.scope,stamp=self.stamp)
         return dict(id=self.identifier)
@@ -103,13 +104,16 @@ class NativeLocalTests(unittest.TestCase):
         username='mkci'+uuid.uuid4().hex[:12];identifier=None
         try:
             check=call_local('check');self.assertTrue(check['local'])
+            before=call_local('inventory');self.assertTrue(before['users']);self.assertEqual(before['source'],'windows-local')
             created=call_local('create',username=username,name='Metakampo CI test',department='Disposable CI account',password=generate_password(24))
             identifier=created['id'];self.assertTrue(identifier.startswith('S-1-5-21-'));self.assertTrue(created['stamp'])
             stamps=call_local('stamps',identifiers=[identifier]);self.assertEqual(stamps['users'][0]['stamp'],created['stamp'])
             time.sleep(1.1)
             changed=call_local('reset',identifier=identifier,password=generate_password(24));self.assertNotEqual(created['stamp'],changed['stamp'])
             call_local('disable',identifier=identifier)
-            users=call_local('list');user=next(user for user in users if user['id']==identifier)
+            inventory=call_local('inventory');users=inventory['users']
+            self.assertTrue({user['id'] for user in before['users']}.issubset({user['id'] for user in users}))
+            user=next(user for user in users if user['id']==identifier)
             self.assertFalse(user['enabled']);self.assertFalse(user['protected']);self.assertTrue(user['upn'].endswith('\\'+username))
             protected=next(user for user in users if user['protected'])
             with self.assertRaises(DirectoryError):call_local('disable',identifier=protected['id'])
@@ -119,3 +123,33 @@ class NativeLocalTests(unittest.TestCase):
                 command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;Remove-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid) -ErrorAction Stop"
                 result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(sid=identifier)),text=True,capture_output=True)
                 self.assertEqual(result.returncode,0,'CI account cleanup failed')
+
+    def test_existing_inventory_survives_unresolvable_administrator_members(self):
+        import subprocess,json
+        from pathlib import Path
+        script=Path(__file__).resolve().parents[1]/'windows'/'local-directory.ps1'
+        with tempfile.TemporaryDirectory() as folder:
+            wrapper=Path(folder)/'inventory-test.ps1'
+            wrapper.write_text("param([string]$Script)\nfunction global:Get-LocalGroupMember {throw 'CI simulated unresolved member'}\n& $Script\n")
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-File',str(wrapper),'-Script',str(script)],input=json.dumps(dict(action='inventory')),text=True,encoding='utf-8',capture_output=True)
+            self.assertEqual(result.returncode,0,'Inventory must not fail when group lookup fails')
+            data=json.loads(result.stdout.lstrip('\ufeff'))['data']
+            self.assertTrue(data['users']);self.assertTrue(data['read_only']);self.assertTrue(data['warnings'])
+            self.assertTrue(all(user['protected'] for user in data['users']))
+
+
+class LocalTransportTests(unittest.TestCase):
+    def test_known_startup_errors_are_specific_and_never_echo_sensitive_output(self):
+        from directory import local_response
+        from types import SimpleNamespace
+        secret='synthetic-sensitive-value'
+        for stderr,code in [('PSSecurityException about_Execution_Policies','PS_POLICY'),('Microsoft.PowerShell.LocalAccounts failed module load','PS_MODULES'),('Unexpected startup failure','PS_RESPONSE')]:
+            with self.assertRaises(DirectoryError) as caught:local_response(SimpleNamespace(stdout='',stderr=stderr+' '+secret,returncode=1))
+            self.assertIn(code,str(caught.exception));self.assertNotIn(secret,str(caught.exception))
+        self.assertEqual(local_response(SimpleNamespace(stdout='\ufeff{"ok":true,"data":[{"username":"existing"}]}',stderr='',returncode=0))[0]['username'],'existing')
+    def test_local_powershell_uses_system_64_bit_location_not_path(self):
+        from directory import local_powershell_path
+        with patch.dict(os.environ,dict(SystemRoot='C:\\Windows'),clear=True):
+            self.assertTrue(local_powershell_path().endswith('System32\\WindowsPowerShell\\v1.0\\powershell.exe'))
+        with patch.dict(os.environ,dict(SystemRoot='C:\\Windows',PROCESSOR_ARCHITEW6432='AMD64'),clear=True):
+            self.assertIn('Sysnative',local_powershell_path())

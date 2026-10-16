@@ -1,6 +1,6 @@
 # Metakampo Access · Aplicación Windows Server
 
-Versión 1.3.0, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+Versión 1.3.1, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
 
 ## Importar y exportar usuarios con contraseñas
 
@@ -89,3 +89,11 @@ En modo local las cuentas integradas (RID inferior a 1000), miembros directos de
 Importación/exportación cifrada y reautenticación funcionan en ambos modos. Para locales se compara la identidad de máquina, SID y PasswordLastSet antes de exportar/consultar una contraseña administrada. Contraseñas desconocidas o cambiadas fuera del gestor no pueden recuperarse. Entre servidores las cuentas locales tienen SID diferentes: se crea o restablece la cuenta de destino según la vista previa. Esto no migra permisos, perfiles, grupos ni derechos RDP; no implica que las cuentas sean una única identidad distribuida. El paquete conserva los identificadores criptográficos de versiones previas.
 
 Dashboard/mapa leen el registro Security **del servidor instalado** tanto en local como en AD; requieren permisos de lectura y políticas de auditoría. No registran todos los servidores del dominio por seleccionar AD. RDP y firma siguen requiriendo certificados válidos y permisos Windows del usuario destino.
+
+## Detección de cuentas existentes (1.3.1)
+
+En modo Usuarios locales, abre Directorio de usuarios: se consulta el SAM de Windows directamente y se muestran también cuentas creadas antes de instalar Metakampo, integradas, deshabilitadas y protegidas. No necesitas importarlas desde archivo ni crear copias en la base del gestor. El botón **Detectar cuentas de Windows** vuelve a consultar y limpia filtros de búsqueda/estado. La pantalla indica el equipo consultado, el total detectado y el error concreto si Windows rechaza la consulta. **Importar archivo y sincronizar** está reservado a transferencias CSV/.fksync entre instalaciones.
+
+La lectura ya no exige elevación: sin ella las cuentas se muestran protegidas/solo lectura. Si Windows no puede resolver un miembro del grupo Administradores, se conserva el listado completo, se muestra la advertencia y todas las cuentas quedan en solo lectura. Los cambios de cuentas y la configuración del modo local siguen requiriendo elevación y verificación de administradores. La lectura no modifica cuentas ni obtiene sus contraseñas.
+
+En 1.3.1 el adaptador fija la ruta de Windows PowerShell de 64 bits (System32/Sysnative) y carga los módulos oficiales desde PSHOME, sin depender de PATH ni PSModulePath personalizados. No modifica ExecutionPolicy. Si una política, firma, antivirus, módulo ausente o tiempo de espera bloquea el proceso, la interfaz indica un código PS_POLICY, PS_MODULES, PS_LAUNCH, PS_TIMEOUT o PS_RESPONSE en lugar de ocultarlo detrás de un error genérico. Si persiste el problema, conserva ese código para diagnóstico; la causa exacta en el servidor del usuario requiere esa evidencia.

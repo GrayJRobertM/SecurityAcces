@@ -222,6 +222,8 @@ def create_app(overrides=None):
 
     @app.get('/api/users')
     def users():
+        if app.config['MODE']=='local':
+            return jsonify(call_local('inventory'))
         values = native_directory('list') if app.config['MODE']!='demo' else [dict(r) for r in db().execute('SELECT * FROM users ORDER BY name')]
         return jsonify(users=values or [])
 

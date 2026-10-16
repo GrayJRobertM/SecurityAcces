@@ -63,3 +63,12 @@
 - Protección de cuentas integradas, administradores y cuenta actual; rechaza controladores de dominio y exige elevación para modo local.
 - Sincronización cifrada y consulta de claves con detección de cambios de contraseña local; cuenta RDP EQUIPO\usuario.
 - Lector Security, métricas y mapa activos en ambos modos reales.
+
+# 1.3.1 · Detección de cuentas locales existentes
+
+- Inventario directo de Windows visible sin elevación, con origen, equipo y total.
+- Si falla la consulta de miembros de Administradores se conservan las cuentas en modo de solo lectura; las mutaciones siguen bloqueadas.
+- Referencia estable de cuenta durante consultas ADSI opcionales; errores de consulta visibles en tabla.
+- Detección explícita limpia filtros; importación de archivos diferenciada de la detección del servidor.
+- Prueba nativa preserva cuentas anteriores y simula un fallo de resolución de Administradores.
+- PowerShell de 64 bits por ruta absoluta, módulos estándar desde PSHOME y diagnóstico de fallos de arranque sin mostrar stderr ni credenciales.

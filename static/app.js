@@ -36,7 +36,7 @@ async function openWorkspace(){
 }
 async function navigate(view){
  if(!pages[view])return;
- state.view=view;$('page-error').hidden=true;
+ state.view=view;$('page-error').hidden=true;$('page-action').disabled=false;
  document.querySelectorAll('.view').forEach(el=>el.hidden=el.id!==view+'-view');
  document.querySelectorAll('.nav[data-view]').forEach(el=>{el.classList.toggle('active',el.dataset.view===view);el.setAttribute('aria-current',el.dataset.view===view?'page':'false');const symbol=el.querySelector('[data-icon]');if(symbol)symbol.innerHTML=icon(symbol.dataset.icon+(el.dataset.view===view?'-solid':''));});
  const [title,description,action]=pages[view];$('page-title').textContent=title;$('crumb').textContent=title;$('page-description').textContent=description;
@@ -53,13 +53,15 @@ async function navigate(view){
 }
 async function loadPolicy(){const data=await api('policy');$('length').value=data.length;$('policy-length').textContent=data.length;$('generator-length').textContent=data.length+' caracteres';}
 async function loadUsers(){
+ $('local-inventory-info').hidden=true;
  $('users-body').innerHTML='<tr><td colspan="4" class="empty" aria-live="polite">Consultando el directorio…</td></tr>';
  busy($('refresh-users'),true);
  try{
-  state.users=(await api('users')).users;
+  const inventory=await api('users');state.users=inventory.users;
+  if(state.mode==='local'){const notice=$('local-inventory-info');notice.hidden=false;notice.textContent=`${state.users.length} cuentas detectadas directamente en ${inventory.computer||'este servidor'}. No necesitas importar un archivo para ver las cuentas existentes. `+(inventory.warnings||[]).join(' ');$('page-action').disabled=Boolean(inventory.read_only);}
   $('total-users').textContent=state.users.length;$('active-users').textContent=state.users.filter(u=>u.enabled).length;$('disabled-users').textContent=state.users.filter(u=>!u.enabled).length;
   renderUsers();
- }catch(e){$('users-body').innerHTML='<tr><td colspan="4" class="empty">No se pudo consultar el directorio. Usa Actualizar para reintentar.</td></tr>';throw e;}
+ }catch(e){state.users=[];$('users-body').innerHTML='<tr><td colspan="4" class="empty">No se pudo consultar el directorio: '+esc(e.message)+'.</td></tr>';$('total-users').textContent='—';$('active-users').textContent='—';$('disabled-users').textContent='—';$('user-count').textContent='Consulta no disponible';throw e;}
  finally{busy($('refresh-users'),false);}
 }
 function renderUsers(){
@@ -110,7 +112,7 @@ document.addEventListener('click',async e=>{
 });
 $('page-action').onclick=()=>state.view==='users'?createUser():state.view==='rdp'?createRdp():createVault();
 $('search').oninput=renderUsers;$('status-filter').onchange=renderUsers;
-$('refresh-users').onclick=async()=>{try{await loadUsers();$('page-error').hidden=true;}catch(e){error(e.message);}};
+$('refresh-users').onclick=async()=>{try{if(state.mode==='local'){$('search').value='';$('status-filter').value='all';}await loadUsers();$('page-error').hidden=true;}catch(e){error(e.message);}};
 $('refresh-audit').onclick=async()=>{try{await loadAudit();}catch(e){error(e.message);}};
 $('generate').onclick=async()=>{busy($('generate'),true);try{showSecret((await api('generate',{})).password);}catch(e){error(e.message);}finally{busy($('generate'),false);}};
 $('policy-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');busy(button,true);try{await api('policy',{length:Number($('length').value)});await loadPolicy();toast('Política actualizada.');}catch(err){error(err.message);}finally{busy(button,false);}};
@@ -196,7 +198,7 @@ for(const id of ['metrics-days','metrics-server','metrics-scope'])$(id).onchange
 $('new-collector').onclick=()=>modal('Registrar servidor Windows','<p>Genera una credencial exclusiva para el recolector de este servidor. Se mostrará una sola vez.</p><label for="collector-name">Nombre del recolector</label><input id="collector-name" name="name" maxlength="100" required><label for="collector-server">Nombre DNS del servidor</label><input id="collector-server" name="server" maxlength="253" placeholder="srv-rdp.empresa.local" required><label for="collector-password">Contraseña de administrador</label><input id="collector-password" name="admin_password" type="password" autocomplete="current-password" required>','Registrar',async data=>{const result=await api('collectors',data);await loadDashboard();showSecret(result.token,'Token del recolector · '+result.server);});
 setInterval(()=>{if(state.view==='dashboard'&&!$('workspace').hidden&&!document.hidden&&!$('modal').open)loadDashboard();},60000);
 
-async function boot(){hydrateIcons();document.documentElement.dataset.mode=localStorage.getItem('fk-mode')||'light';try{const info=await api('session');state.csrf=info.csrf;state.mode=info.mode;state.desktop=Boolean(info.desktop);if(state.desktop)desktopLabels();if(info.mode==='ad'){$('demo-notice').hidden=true;$('mode-badge').textContent='Active Directory';$('connection-label').textContent='Active Directory';$('connection-detail').textContent='Ámbito de la OU configurada';}if(info.mode==='local'){$('demo-notice').hidden=true;$('mode-badge').textContent='Usuarios locales';$('connection-label').textContent='Este servidor';$('connection-detail').textContent='Cuentas locales de Windows';$('directory-scope').textContent='Solo este servidor · Cuentas protegidas excluidas de cambios';pages.users[1]='Gestiona las cuentas locales de Windows de este servidor.';$('password-change-note').textContent='En modo local se conserva la política de contraseña de Windows';$('windows-policy-note').textContent='Configura también la política de contraseña local de Windows para cubrir cambios fuera del gestor.';}if(!info.setup)$('setup-note').textContent='Antes del primer acceso, configura el administrador con python app.py --init-admin en el servidor.';else $('setup-note').textContent=info.desktop?'Aplicación de este servidor · Cuenta Windows actual':info.mode==='demo'?'Entorno de demostración · Sin conexión al dominio':'';if(info.authenticated)await openWorkspace();}catch(e){$('login-error').textContent=e.message;}}
+async function boot(){hydrateIcons();document.documentElement.dataset.mode=localStorage.getItem('fk-mode')||'light';try{const info=await api('session');state.csrf=info.csrf;state.mode=info.mode;state.desktop=Boolean(info.desktop);if(state.desktop)desktopLabels();if(info.mode==='ad'){$('demo-notice').hidden=true;$('mode-badge').textContent='Active Directory';$('connection-label').textContent='Active Directory';$('connection-detail').textContent='Ámbito de la OU configurada';}if(info.mode==='local'){$('refresh-users').textContent='Detectar cuentas de Windows';$('demo-notice').hidden=true;$('mode-badge').textContent='Usuarios locales';$('connection-label').textContent='Este servidor';$('connection-detail').textContent='Cuentas locales de Windows';$('directory-scope').textContent='Solo este servidor · Cuentas protegidas excluidas de cambios';pages.users[1]='Gestiona las cuentas locales de Windows de este servidor.';$('password-change-note').textContent='En modo local se conserva la política de contraseña de Windows';$('windows-policy-note').textContent='Configura también la política de contraseña local de Windows para cubrir cambios fuera del gestor.';}if(!info.setup)$('setup-note').textContent='Antes del primer acceso, configura el administrador con python app.py --init-admin en el servidor.';else $('setup-note').textContent=info.desktop?'Aplicación de este servidor · Cuenta Windows actual':info.mode==='demo'?'Entorno de demostración · Sin conexión al dominio':'';if(info.authenticated)await openWorkspace();}catch(e){$('login-error').textContent=e.message;}}
 boot();
 
 function desktopLabels(){
