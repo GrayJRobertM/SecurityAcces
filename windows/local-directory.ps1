@@ -4,10 +4,11 @@ $ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 try {
-    # Resolve built-in modules from this PowerShell installation, independent of PSModulePath.
-    foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets','Microsoft.PowerShell.LocalAccounts')) {
-        Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$module,($module+'.psd1'))) -ErrorAction Stop
-    }
+    # Windows PowerShell Utility/Management are built-in snap-ins, not module manifests.
+    # Search standard modules first without changing machine/user environment settings.
+    $env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')+';'+$env:PSModulePath
+    Import-Module CimCmdlets -ErrorAction Stop
+    Import-Module Microsoft.PowerShell.LocalAccounts -ErrorAction Stop
     $request=[Console]::In.ReadToEnd() | ConvertFrom-Json
     $os=Get-CimInstance Win32_OperatingSystem
     if ($os.ProductType -ne 3) { throw 'Requires member or standalone Windows Server' }
