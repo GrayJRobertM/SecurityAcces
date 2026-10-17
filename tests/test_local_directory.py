@@ -207,12 +207,12 @@ class NativeLocalTests(unittest.TestCase):
         username='mkds'+uuid.uuid4().hex[:12];identifier=None;department='CI '+username
         description='Existing Windows description '+username
         def command(script,**values):
-            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',"$ErrorActionPreference='Stop';$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;"+script],input=json.dumps(values),text=True,encoding='utf-8',capture_output=True)
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',"$ErrorActionPreference='Stop';$env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')+';'+$env:PSModulePath;Import-Module Microsoft.PowerShell.LocalAccounts -ErrorAction Stop;$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;"+script],input=json.dumps(values),text=True,encoding='utf-8',capture_output=True)
             self.assertEqual(result.returncode,0,result.stderr)
             return result.stdout
         def current():return next(u for u in call_local('list') if u['id']==identifier)
         try:
-            raw=command("$password=ConvertTo-SecureString $request.password -AsPlainText -Force;$user=New-LocalUser -Name $request.username -Description $request.description -Password $password;[Console]::Write($user.SID.Value)",username=username,description=description,password=generate_password(24))
+            raw=command("$password=[Security.SecureString]::new();foreach($c in ([string]$request.password).ToCharArray()){$password.AppendChar($c)};$password.MakeReadOnly();$user=New-LocalUser -Name $request.username -Description $request.description -Password $password;[Console]::Write($user.SID.Value)",username=username,description=description,password=generate_password(24))
             identifier=raw.strip();user=current()
             self.assertEqual(user['description'],description);self.assertEqual(user['department'],'')
             call_local('department',identifier=identifier,department=department)
