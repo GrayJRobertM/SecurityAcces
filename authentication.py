@@ -60,7 +60,14 @@ def register(app,db,audit,throttled,fresh_password):
     def change_operator(username,action):
         data=request.get_json() or {}
         if not confirm(data):return jsonify(error='Confirma tu contraseña de Metakampo.'),403
-        if username=='admin' or action not in ('reset','status'):raise ValueError('Operación no permitida para esta cuenta.')
+        if action not in ('reset','status'):raise ValueError('Operación no permitida para esta cuenta.')
+        if username=='admin':
+            if action!='reset' or current_actor()!='admin':raise ValueError('Solo el propietario puede cambiar su contraseña.')
+            password=chosen_password(data)
+            db().execute('UPDATE admin SET hash=? WHERE id=1',(generate_password_hash(password,method='pbkdf2:sha256:1000000'),))
+            db().execute("DELETE FROM sessions WHERE actor='admin'")
+            audit('cambiar contraseña del propietario','admin')
+            return jsonify(ok=True,password=password)
         if not db().execute('SELECT 1 FROM app_operators WHERE username=?',(username,)).fetchone():return jsonify(error='Administrador no encontrado.'),404
         password=None
         if action=='reset':

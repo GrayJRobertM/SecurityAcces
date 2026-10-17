@@ -53,3 +53,9 @@ class OperatorTests(unittest.TestCase):
         result=self.post(other,'operators/simple/reset',dict(password='a',admin_password='1'))
         self.assertEqual(result.status_code,200);self.assertEqual(result.json['password'],'a')
         self.login(other,'simple','a')
+
+        value=self.post(self.client,'vault',dict(title='Keep through owner password change',username='service')).json
+        owner=self.post(self.client,'operators/admin/reset',dict(password='z',admin_password=self.password))
+        self.assertEqual(owner.status_code,200)
+        self.login(self.client,'admin','z')
+        self.assertEqual(self.post(self.client,'vault/'+value['id']+'/reveal',dict(password='z')).json['password'],value['password'])
