@@ -15,13 +15,30 @@ def machine_identity():
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Cryptography',
                        0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
         machine = winreg.QueryValueEx(key, 'MachineGuid')[0]
-    result = subprocess.run(['whoami.exe', '/user', '/fo', 'csv', '/nh'],
-                            capture_output=True, text=True, check=True,
-                            creationflags=subprocess.CREATE_NO_WINDOW)
-    sid = list(csv.reader(result.stdout.strip().splitlines()))[0][-1]
-    if not sid.startswith('S-1-'):
-        raise OSError('No se pudo identificar la cuenta Windows.')
+    sid=current_sid()
     return dict(machine=machine, sid=sid)
+
+
+def current_sid():
+    k=ctypes.WinDLL('kernel32',use_last_error=True);a=ctypes.WinDLL('advapi32',use_last_error=True)
+    k.GetCurrentThread.restype=wintypes.HANDLE;k.GetCurrentProcess.restype=wintypes.HANDLE
+    k.CloseHandle.argtypes=[wintypes.HANDLE];k.LocalFree.argtypes=[ctypes.c_void_p]
+    a.OpenThreadToken.argtypes=[wintypes.HANDLE,wintypes.DWORD,wintypes.BOOL,ctypes.POINTER(wintypes.HANDLE)]
+    a.OpenProcessToken.argtypes=[wintypes.HANDLE,wintypes.DWORD,ctypes.POINTER(wintypes.HANDLE)]
+    a.GetTokenInformation.argtypes=[wintypes.HANDLE,ctypes.c_int,ctypes.c_void_p,wintypes.DWORD,ctypes.POINTER(wintypes.DWORD)]
+    a.ConvertSidToStringSidW.argtypes=[ctypes.c_void_p,ctypes.POINTER(wintypes.LPWSTR)]
+    token=wintypes.HANDLE()
+    if not a.OpenThreadToken(k.GetCurrentThread(),8,True,ctypes.byref(token)):
+        if ctypes.get_last_error()!=1008 or not a.OpenProcessToken(k.GetCurrentProcess(),8,ctypes.byref(token)):raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        length=wintypes.DWORD();a.GetTokenInformation(token,1,None,0,ctypes.byref(length))
+        buffer=ctypes.create_string_buffer(length.value)
+        if not a.GetTokenInformation(token,1,buffer,length,ctypes.byref(length)):raise ctypes.WinError(ctypes.get_last_error())
+        sid=ctypes.cast(buffer,ctypes.POINTER(ctypes.c_void_p))[0];text=wintypes.LPWSTR()
+        if not a.ConvertSidToStringSidW(sid,ctypes.byref(text)):raise ctypes.WinError(ctypes.get_last_error())
+        try:return text.value
+        finally:k.LocalFree(ctypes.cast(text,ctypes.c_void_p))
+    finally:k.CloseHandle(token)
 
 
 def dpapi(value, decrypt=False):

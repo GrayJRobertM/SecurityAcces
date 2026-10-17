@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.4.1'
+VERSION = '1.5.0'
 
 
 def validate_settings(data):
@@ -222,6 +222,8 @@ def setup_application(store, gate, on_ready):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--shared-host', action='store_true')
+    parser.add_argument('--shared-smoke-host', action='store_true')
     parser.add_argument('--configure', action='store_true')
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--gui-smoke-test', action='store_true')
@@ -270,7 +272,7 @@ def main():
     import webview
     from waitress import create_server
     from local_telemetry import LocalCollector
-    temporary = tempfile.TemporaryDirectory(prefix='fk-gui-smoke-') if args.gui_smoke_test else None
+    temporary = tempfile.TemporaryDirectory(prefix='fk-gui-smoke-') if (args.gui_smoke_test or args.shared_smoke_host) else None
     folder = Path(temporary.name) if temporary else Path(os.environ['LOCALAPPDATA']) / 'Freshkampo' / 'Access'
     store = Store(folder)
     lockfile = open(folder / 'desktop.lock', 'a+b')
@@ -292,12 +294,19 @@ def main():
             collector = LocalCollector(app.db_path, folder)
             collectors.append(collector)
             collector.start()
+    if args.shared_smoke_host:
+        store.save(validate_settings(dict(mode='demo',store='CurrentUser')))
     gate = DesktopGate(None)
     if store.values and not args.configure:
         gate.application = store.application()
         ready(gate.application)
     else:
         gate.application = setup_application(store, gate, ready)
+    shared=None
+    if args.shared_host or args.shared_smoke_host:
+        from shared_desktop import PipeServer
+        shared=PipeServer(lambda:gate.application if store.values else None)
+        shared.start()
     server = create_server(gate, host='127.0.0.1', port=0, threads=4,
                            clear_untrusted_proxy_headers=True)
     gate.host = '127.0.0.1:' + str(server.effective_port)
@@ -306,7 +315,7 @@ def main():
     thread.start()
     webview.settings.update(ALLOW_DOWNLOADS=True, ALLOW_FILE_URLS=False,
                             OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
-    window = webview.create_window('Metakampo Access · Este servidor', url=url,
+    window = webview.create_window('Metakampo Access · '+('Servidor compartido — mantener abierto' if shared else 'Este servidor'), url=url,
                                   width=1360, height=900, min_size=(900, 650), text_select=True)
     smoke_errors = []
     if args.gui_smoke_test:
@@ -327,6 +336,7 @@ def main():
     finally:
         for collector in collectors:
             collector.stop()
+        if shared:shared.stop()
         server.close()
         lockfile.close()
         if temporary:

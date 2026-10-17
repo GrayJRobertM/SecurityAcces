@@ -10,7 +10,7 @@ import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from flask import jsonify, request
-from werkzeug.security import check_password_hash
+from authentication import reauthenticate
 
 IDS={4624,4625,4634,4778,4779}
 EVENT_FIELDS={'record_id','event_id','at','username','domain','ip','logon_type','logon_id','session_name','status','substatus'}
@@ -125,8 +125,7 @@ def register(app,db,audit,throttled):
     def reauth(data):
         if throttled('collector-admin',10):return False
         password=data.get('admin_password','')
-        row=db().execute('SELECT hash FROM admin WHERE id=1').fetchone()
-        return row and isinstance(password,str) and len(password)<=256 and check_password_hash(row[0],password)
+        return reauthenticate(db(),password)
 
     @app.get('/api/dashboard')
     def dashboard():return jsonify(metrics(db(),request.args,app.config['MODE']))

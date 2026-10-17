@@ -23,6 +23,10 @@ jobs:
         env:
           FK_NATIVE_LOCAL_TESTS: "1"
         run: python -m unittest discover -s tests -p test_local_directory.py -k NativeLocalTests -v
+      - name: Native shared session integration
+        env:
+          FK_NATIVE_SHARED_TESTS: "1"
+        run: python -m unittest discover -s tests -p test_shared_desktop.py -k NativeSharedTests -v
       - name: Tests with offline geolocation
         run: python -m unittest discover -s tests -v
       - name: Parse every PowerShell script
@@ -69,6 +73,17 @@ jobs:
           $process=Start-Process C:\FreshkampoPilot\MetakampoAccess.exe -ArgumentList '--gui-smoke-test','--gui-smoke-report', $report -PassThru
           if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Desktop window failed to open and close within 90 seconds' }
           if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Native WebView2 window test failed' }
+          $sharedHost=Start-Process C:\FreshkampoPilot\MetakampoAccess.exe -ArgumentList '--shared-smoke-host' -PassThru
+          try {
+            python packaging/wait-shared-host.py C:\FreshkampoPilot\MetakampoAccess.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Installed shared host failed to start' }
+            $sharedReport=Join-Path $env:GITHUB_WORKSPACE 'dist\installer\SHARED-GUI-SMOKE.txt'
+            $sharedClient=Start-Process C:\FreshkampoPilot\MetakampoClient.exe -ArgumentList '--gui-smoke-test','--gui-smoke-report',$sharedReport -PassThru
+            if (-not $sharedClient.WaitForExit(90000)) { $sharedClient.Kill(); throw 'Shared desktop client timed out' }
+            if ($sharedClient.ExitCode -ne 0 -or -not (Test-Path $sharedReport)) { throw 'Shared WebView2 client test failed' }
+          } finally {
+            if (-not $sharedHost.HasExited) { $sharedHost.Kill(); $sharedHost.WaitForExit() }
+          }
           Get-FileHash $installer -Algorithm SHA256 | Format-List | Out-File dist\installer\SHA256.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:

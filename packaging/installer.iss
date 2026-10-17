@@ -1,4 +1,4 @@
-#define AppVersion "1.4.1"
+#define AppVersion "1.5.0"
 [Setup]
 AppId={{72FBC267-2574-4268-AB77-36B8374BCA7D}
 AppName=Metakampo Access
@@ -32,9 +32,10 @@ Source: "..\build-tools\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; DestDir: 
 Source: "..\DESKTOP.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Metakampo Access"; Filename: "{app}\MetakampoAccess.exe"
+Name: "{group}\Metakampo Access"; Filename: "{app}\MetakampoClient.exe"
+Name: "{group}\Administrar servidor Metakampo"; Filename: "{app}\MetakampoAccess.exe"; Parameters: "--shared-host"
 Name: "{group}\Configurar Metakampo Access"; Filename: "{app}\MetakampoAccess.exe"; Parameters: "--configure"
-Name: "{commondesktop}\Metakampo Access"; Filename: "{app}\MetakampoAccess.exe"
+Name: "{commondesktop}\Metakampo Access"; Filename: "{app}\MetakampoClient.exe"
 
 [InstallDelete]
 Type: files; Name: "{app}\FreshkampoAccess.exe"
@@ -44,7 +45,7 @@ Type: files; Name: "{commondesktop}\Freshkampo Access.lnk"
 
 [Run]
 Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando el motor de escritorio Microsoft WebView2..."; Flags: waituntilterminated
-Filename: "{app}\MetakampoAccess.exe"; Description: "Abrir Metakampo Access"; Flags: shellexec nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\MetakampoAccess.exe"; Parameters: "--shared-host"; Description: "Abrir el servidor compartido Metakampo"; Flags: shellexec nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
 function IsServerCore(): Boolean;

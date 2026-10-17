@@ -12,7 +12,7 @@ import time
 import uuid
 from datetime import datetime,timezone
 from flask import jsonify,request,session,send_file
-from werkzeug.security import check_password_hash
+from authentication import reauthenticate, current_actor
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 from security import seal,unseal,CATEGORIES,fingerprint
@@ -130,8 +130,7 @@ def register(app,db,audit,throttled,fresh_password,native_directory=None):
     def reauth(data):
         if throttled('user-sync',15):return False
         supplied=data.get('admin_password','')
-        admin=db().execute('SELECT hash FROM admin WHERE id=1').fetchone()
-        return isinstance(supplied,str) and len(supplied)<=256 and admin and check_password_hash(admin[0],supplied)
+        return reauthenticate(db(),supplied)
     def stamps(identifiers):
         if app.config['MODE']!='demo':
             value=native_directory('stamps',identifiers=identifiers)
@@ -242,7 +241,7 @@ def register(app,db,audit,throttled,fresh_password,native_directory=None):
         if db().execute("SELECT 1 FROM sync_jobs WHERE status='aplicando' LIMIT 1").fetchone():db().rollback();return jsonify(error='Espera a que termine la importación en curso.'),409
         changed=db().execute('UPDATE sync_plans SET consumed=1,secret=NULL WHERE id=? AND owner=? AND consumed=0 AND expires>?',(identifier,session['auth'],time.time())).rowcount
         if not changed:db().rollback();return jsonify(error='La importación ya fue utilizada.'),409
-        job=str(uuid.uuid4());owner=session['auth']
+        job=str(uuid.uuid4());owner=session['auth'];actor=current_actor()
         db().execute('INSERT INTO sync_jobs(id,owner,status,total,created) VALUES(?,?,?,?,?)',(job,owner,'aplicando',len(contents['items']),time.time()))
         db().commit();audit('iniciar sincronización',job)
         def run():
@@ -276,10 +275,10 @@ def register(app,db,audit,throttled,fresh_password,native_directory=None):
                         if native and native.get('warning'):
                             raise DirectoryError('La cuenta existe pero su grupo de departamento requiere revisión.')
                         result=dict(username=item['username'],result='aplicado',action=item['action'])
-                        audit('sincronizar usuario',item['username'])
+                        audit('sincronizar usuario',item['username'],actor=actor)
                     except Exception:
                         db().rollback();result=dict(username=item['username'],result='error: verificar estado real antes de reintentar',action=item['action'])
-                        audit('sincronizar usuario',item['username'],'error o resultado por verificar')
+                        audit('sincronizar usuario',item['username'],'error o resultado por verificar',actor=actor)
                     results.append(result)
                     failed=result['result']!='aplicado'
                     db().execute('UPDATE sync_jobs SET completed=?,results=?,status=? WHERE id=?',

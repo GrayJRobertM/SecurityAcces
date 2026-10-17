@@ -13,6 +13,7 @@ from storage import connection
 import time
 import uuid
 from datetime import timedelta
+from contextlib import nullcontext
 from pathlib import Path
 from threading import Lock
 
@@ -25,6 +26,8 @@ from rdp import RDPError, make_package, validate_connection, portal_url, configu
 from telemetry import install as install_telemetry, register as register_telemetry
 from access_map import register as register_access_map
 from user_sync import install as install_user_sync, register as register_user_sync, remember as remember_user_password
+
+from authentication import install as install_auth, register as register_operators, account_hash, reauthenticate, current_actor
 
 BASE = Path(__file__).parent
 
@@ -72,6 +75,7 @@ def create_app(overrides=None):
         CREATE TABLE IF NOT EXISTS rdp_clients (id TEXT PRIMARY KEY, host TEXT NOT NULL, username TEXT NOT NULL, code_hash TEXT NOT NULL, secret BLOB, expires REAL NOT NULL, consumed INTEGER NOT NULL DEFAULT 0, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         
         ''')
+        install_auth(db)
         if app.config['MODE'] == 'demo' and not db.execute('SELECT 1 FROM users LIMIT 1').fetchone():
             db.executemany('INSERT INTO users VALUES (?,?,?,?,?)', [(str(uuid.uuid4()), n, u, d, e) for n,u,d,e in [
                 ('Mariana López','mariana.lopez','Finanzas',1), ('Daniel Torres','daniel.torres','TI',1),
@@ -95,8 +99,8 @@ def create_app(overrides=None):
         if 'db' in g:
             g.db.close()
 
-    def audit(action, target='', result='correcto'):
-        db().execute('INSERT INTO audit(actor,action,target,result) VALUES (?,?,?,?)', ('admin', action, target, result))
+    def audit(action, target='', result='correcto', actor=None):
+        db().execute('INSERT INTO audit(actor,action,target,result) VALUES (?,?,?,?)', (actor or current_actor(), action, target, result))
         db().commit()
 
     def fresh_password():
@@ -146,9 +150,10 @@ def create_app(overrides=None):
                     return jsonify(error='Sesión inválida. Recarga la página.'), 403
             if request.path not in ('/api/session', '/api/login'):
                 token = session.get('auth', '')
-                row = db().execute('SELECT expires FROM sessions WHERE token=?', (token,)).fetchone()
-                if not row or row[0] < time.time():
+                row = db().execute('SELECT expires,actor FROM sessions WHERE token=?', (token,)).fetchone()
+                if not row or row[0] < time.time() or not account_hash(db(),row['actor']):
                     return jsonify(error='Inicia sesión para continuar.'), 401
+                g.actor=row['actor']
 
     @app.after_request
     def headers(response):
@@ -185,28 +190,32 @@ def create_app(overrides=None):
 
     @app.get('/api/session')
     def status():
-        row = db().execute('SELECT expires FROM sessions WHERE token=?', (session.get('auth',''),)).fetchone()
-        return jsonify(csrf=session['csrf'], authenticated=bool(row and row[0]>time.time()), mode=app.config['MODE'], desktop=bool(app.config.get('DESKTOP')),
-                       setup=bool(db().execute('SELECT 1 FROM admin').fetchone()))
+        row = db().execute('SELECT expires,actor FROM sessions WHERE token=?', (session.get('auth',''),)).fetchone()
+        active=bool(row and row[0]>time.time() and account_hash(db(),row['actor']))
+        return jsonify(csrf=session['csrf'], authenticated=active, mode=app.config['MODE'], desktop=bool(app.config.get('DESKTOP')),
+                       setup=bool(db().execute('SELECT 1 FROM admin').fetchone()),username=row['actor'] if active else '',shared=bool(request.environ.get('metakampo.shared_client')))
 
     @app.post('/api/login')
     def login():
         data = request.get_json(silent=True) or {}
-        if throttled('login'):
+        username=data.get('username','')
+        username=username.lower() if isinstance(username,str) and len(username)<=40 else ''
+        if throttled('login:'+username):
             return jsonify(error='Demasiados intentos. Espera 15 minutos.'), 429
-        row = db().execute('SELECT hash FROM admin WHERE id=1').fetchone()
+        stored=account_hash(db(),username)
         password = data.get('password')
-        if not isinstance(password,str) or len(password)>256 or data.get('username')!='admin' or not row or not check_password_hash(row[0], password):
-            audit('inicio de sesión', '', 'rechazado')
+        if not isinstance(password,str) or len(password)>256 or not stored or not check_password_hash(stored,password):
+            audit('inicio de sesión',username,'rechazado',actor=username or 'desconocido')
             return jsonify(error='Credenciales inválidas.'), 401
         with attempts_lock:
-            attempts.pop(('login',request.remote_addr),None)
+            attempts.pop(('login:'+username,request.remote_addr),None)
         old = session.get('auth','')
         session.clear()
         session.update(auth=secrets.token_hex(32), csrf=secrets.token_urlsafe(32))
         session.permanent = True
         db().execute('DELETE FROM sessions WHERE token=? OR expires<?', (old,time.time()))
-        db().execute('INSERT INTO sessions VALUES (?,?)',(session['auth'],time.time()+900))
+        db().execute('INSERT INTO sessions(token,expires,actor) VALUES (?,?,?)',(session['auth'],time.time()+900,username))
+        g.actor=username
         audit('inicio de sesión')
         return jsonify(csrf=session['csrf'])
 
@@ -324,9 +333,8 @@ def create_app(overrides=None):
         if throttled('reveal', 10):
             return jsonify(error='Demasiados intentos. Espera 15 minutos.'), 429
         data=request.get_json() or {}
-        row=db().execute('SELECT hash FROM admin WHERE id=1').fetchone()
         supplied=data.get('password','')
-        if not isinstance(supplied,str) or len(supplied)>256 or not check_password_hash(row[0],supplied):
+        if not reauthenticate(db(),supplied):
             audit('revelar credencial',identifier,'rechazado')
             return jsonify(error='Confirma tu contraseña de administrador.'),403
         entry=db().execute('SELECT secret FROM vault WHERE id=?',(identifier,)).fetchone()
@@ -370,8 +378,7 @@ def create_app(overrides=None):
                 return jsonify(error='Genera paquetes con credenciales desde el portal HTTPS.'),403
             if throttled('rdp-export', 10):return jsonify(error='Demasiados intentos. Espera 15 minutos.'),429
             supplied=data.get('admin_password','')
-            admin=db().execute('SELECT hash FROM admin WHERE id=1').fetchone()
-            if not admin or not isinstance(supplied,str) or len(supplied)>256 or not check_password_hash(admin[0],supplied):
+            if not reauthenticate(db(),supplied):
                 audit('generar cliente RDP',host,'reautenticación rechazada')
                 return jsonify(error='Confirma tu contraseña de administrador.'),403
             password=data.get('account_password')
@@ -380,9 +387,10 @@ def create_app(overrides=None):
                 raise ValueError('Indica la contraseña vigente de la cuenta para RDP.')
             if app.config.get('DESKTOP'):
                 from windows_native import dpapi, machine_identity
-                identity=machine_identity()
                 identifier=str(uuid.uuid4())
-                credentials=dpapi(json.dumps(dict(host=host,username=username,password=password)).encode())
+                with request.environ.get('metakampo.impersonate',nullcontext)():
+                    identity=machine_identity()
+                    credentials=dpapi(json.dumps(dict(host=host,username=username,password=password)).encode())
                 configuration=dict(id=identifier,host=host,username=username,local=True,
                                    identity=identity,credential=base64.b64encode(credentials).decode())
                 package=make_package(host,username,port,configuration=configuration)
@@ -458,6 +466,7 @@ def create_app(overrides=None):
 
     register_telemetry(app,db,audit,throttled)
     register_access_map(app,db)
+    register_operators(app,db,audit,throttled,fresh_password)
     register_user_sync(app,db,audit,throttled,fresh_password,native_directory)
     app.db_path = database
     return app

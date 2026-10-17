@@ -15,4 +15,7 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='MetakampoAccess',
           console=False, disable_windowed_traceback=True, uac_admin=True,
           icon=str(root / 'packaging' / 'MetakampoAccess.ico'),
           version=str(root / 'packaging' / 'version.txt'))
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='MetakampoAccess')
+client_a = Analysis([str(root / 'client_desktop.py')], pathex=[str(root)], binaries=binaries, datas=datas, hiddenimports=hiddenimports + ['webview.platforms.edgechromium','clr'], excludes=['PyQt5','PyQt6','PySide2','PySide6','cefpython3'], noarchive=False)
+client_pyz = PYZ(client_a.pure)
+client_exe = EXE(client_pyz, client_a.scripts, [], exclude_binaries=True, name='MetakampoClient', console=False, disable_windowed_traceback=True, uac_admin=False, icon=str(root / 'packaging' / 'MetakampoAccess.ico'), version=str(root / 'packaging' / 'version.txt'))
+coll = COLLECT(client_exe, client_a.binaries, client_a.datas, exe, a.binaries, a.datas, strip=False, upx=False, name='MetakampoAccess')

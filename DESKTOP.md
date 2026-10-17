@@ -1,6 +1,23 @@
 # Metakampo Access · Aplicación Windows Server
 
-Versión 1.4.1, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+Versión 1.5.0, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+
+## Administradores desde sus sesiones RDP del mismo servidor
+
+La versión 1.5.0 permite que varias personas abran **Metakampo Access** en sus escritorios RDP del servidor instalado, con administración completa y contraseñas individuales **del gestor**. Estas cuentas son independientes de los usuarios Windows locales/AD que administra el directorio. Crearlas no concede inicio de sesión RDP ni pertenencia a Administradores de Windows; las cuentas Windows deben tener ya acceso al servidor según su configuración y licenciamiento.
+
+1. El propietario instala/actualiza y abre **Inicio → Administrar servidor Metakampo**, con la misma cuenta Windows que configuró la bóveda. Acepta UAC y configura el entorno si aún no existe. Mantiene esta ventana abierta; puede minimizarla y desconectar su sesión RDP sin cerrar sesión, siempre que la política Windows no cierre esa sesión.
+2. En **Directorio de usuarios → Administradores del gestor → Agregar administrador**, crea una cuenta para cada persona y confirma su propia contraseña del gestor. La contraseña inicial se genera según la política y se muestra temporalmente. Todas estas cuentas tienen administración completa, incluidos consulta/exportación de contraseñas y administración de otros operadores.
+3. Cada persona inicia su sesión RDP en **el mismo servidor**, abre el acceso directo **Metakampo Access** del escritorio y entra con su cuenta del gestor. Este cliente se ejecuta sin solicitar elevación. Utiliza los datos y la bóveda central del propietario; no crea una instalación independiente por perfil.
+4. Desde Administradores del gestor puedes desactivar/reactivar cuentas o restablecer su contraseña. Desactivar/restablecer invalida sus sesiones existentes. No puedes desactivar tu propia cuenta; la cuenta propietaria `admin` permanece protegida. Las confirmaciones sensibles utilizan la contraseña de la cuenta del gestor que realiza la acción, no la del propietario. La auditoría registra ese usuario individual.
+
+**Disponibilidad:** el proceso central debe estar abierto y configurado. Cerrar su ventana, cerrar sesión del propietario, reiniciar el servidor o una política de cierre de sesiones desconectadas interrumpe el acceso compartido. Después hay que volver a abrir Administrar servidor Metakampo. No se instala servicio ni tarea programada, ni se guarda una contraseña Windows para mantenerlo iniciado. Si no está disponible, el cliente muestra un aviso y no abre otra bóveda. Los operadores se guardan por entorno (Local/AD/Demo), junto con la base de ese entorno.
+
+**Protección:** los datos y la clave DPAPI siguen en el perfil del propietario con sus permisos existentes; no se copian a carpetas compartidas ni se cambia a cifrado por máquina. El cliente y el propietario se comunican por una named pipe local con ACL de usuarios interactivos, sin permiso de crear instancias para esos clientes y rechazando conexiones de red. Antes de enviar credenciales, el cliente comprueba que la pipe pertenece al ejecutable central instalado. Cada ventana conserva su transporte HTTP privado en loopback y su acceso de un solo uso; no hay un portal de red ni se abre un puerto para otros equipos. Las modificaciones Windows se ejecutan bajo la identidad elevada y el ámbito configurado del propietario, preservando las protecciones de cuentas existentes.
+
+En clientes RDP con credenciales preparadas, la protección DPAPI y el SID se calculan exclusivamente bajo una suplantación breve de la identidad Windows de quien solicita el paquete desde su sesión RDP; se revierte antes de usar base/certificados del propietario. El paquete sigue limitado a esa cuenta Windows y al mismo servidor. No se transfiere la clave de la bóveda al cliente. El proceso principal conserva el manifiesto requireAdministrator; MetakampoClient.exe usa asInvoker. La configuración del servidor queda en el acceso del propietario; no se expone al cliente compartido.
+
+La actualización conserva cuentas/datos anteriores y añade la tabla de administradores y el actor en las sesiones. Las sesiones existentes se atribuyen a admin. Pruebas Windows incluyen acceso IPC con identidad estándar sin pertenencia a Administradores, comprobación de SID del solicitante, rechazo de servidor ejecutable ajeno y apertura del cliente instalado en WebView2. El uso real simultáneo en sesiones RDP del servidor del usuario y DPAPI de paquetes RDP entre distintos perfiles debe validarse en su entorno; no se ha realizado una conexión RDP real contra su servidor.
 
 ## Departamentos, grupos y estado de usuarios
 
@@ -14,7 +31,7 @@ Si la cuenta se crea pero falla su asignación al grupo, la aplicación conserva
 
 ## Abrir con doble clic
 
-El ejecutable incluye un manifiesto `requireAdministrator`. Abre el acceso directo normalmente; Windows solicita elevación cuando corresponde sin usar clic derecho → Ejecutar como administrador. No se desactiva UAC ni se guardan credenciales de Windows, y no se instala una tarea para eludir la confirmación. La contraseña administrativa interna del gestor sigue siendo independiente.
+El ejecutable propietario **Administrar servidor Metakampo** incluye un manifiesto `requireAdministrator`. Abre ese acceso normalmente; Windows solicita elevación cuando corresponde sin usar clic derecho → Ejecutar como administrador. No se desactiva UAC ni se guardan credenciales de Windows, y no se instala una tarea para eludir la confirmación. La contraseña administrativa interna del gestor sigue siendo independiente.
 
 Utiliza la misma cuenta Windows con la que configuraste la instalación, debido a la protección DPAPI por usuario. Si Windows pide credenciales de otra cuenta y se usan, se abriría el perfil de esa otra identidad, no la bóveda del usuario original. La prueba de instalación verifica el manifiesto del EXE y la apertura en Windows Server 2022; Server 2019 directo y AD real siguen pendientes.
 

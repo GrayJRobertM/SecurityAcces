@@ -1,5 +1,14 @@
 # Cambios
 
+## 2026-10-17 — 1.5.0 Administración compartida en sesiones RDP
+
+- Cuentas individuales del gestor con administración completa, reautenticación propia y auditoría atribuida.
+- Cliente sin elevación en cada escritorio RDP del mismo servidor; propietario central elevado conserva base y DPAPI.
+- IPC local por named pipes con ACL restringida, rechazo de red y verificación del ejecutable servidor antes de enviar credenciales.
+- Revocación de sesiones al desactivar/restablecer operadores; claves de Windows y permisos RDP no modificados.
+- Paquetes RDP cifrados bajo identidad Windows del solicitante; la configuración sigue reservada a la ventana del propietario.
+- Requiere mantener abierto el propietario; no se instala servicio ni se guardan credenciales Windows.
+
 ## 2026-10-16 — 1.4.1 Descripción independiente del departamento
 
 - Corrige el mapeo incorrecto de Description en cuentas locales: departamento leído solo desde pertenencias a grupos MKD validados.
