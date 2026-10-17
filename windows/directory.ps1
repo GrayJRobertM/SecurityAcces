@@ -69,7 +69,8 @@ try {
                 'unlock' { Unlock-ADAccount -Identity $user @common }
                 'department' {
                     $group=Set-DepartmentMembership $user ([string]$user.Department) ([string]$request.department)
-                    Set-ADUser -Identity $user -Department $request.department @common
+                    if ($request.department) {Set-ADUser -Identity $user -Department $request.department @common}
+                    else {Set-ADUser -Identity $user -Clear Department @common}
                 }
                 'update' {
                     $group=Set-DepartmentMembership $user ([string]$user.Department) ([string]$request.department)
