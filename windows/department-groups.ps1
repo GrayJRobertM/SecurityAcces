@@ -1,4 +1,4 @@
-# Shared naming contract; never adopt an existing unmarked Windows/AD group.
+﻿# Shared naming contract; never adopt an existing unmarked Windows/AD group.
 function Department-Spec([string]$department) {
     $department=$department.Trim()
     if (-not $department) {return $null}
@@ -33,6 +33,17 @@ function Set-DepartmentMembership($user,[string]$previous,[string]$department) {
             if (@($target.member) -notcontains $user.DistinguishedName) {Add-ADGroupMember -Identity $target -Members $user @common}
         } elseif (@([MetakampoLocalSam]::MemberSids($target.Name)) -notcontains $user.SID.Value) {Add-LocalGroupMember -SID $target.SID -Member $user -ErrorAction Stop}
     }
+    if (-not $request.server) {
+        # Remove only other verified owned department memberships, never general groups.
+        foreach ($entry in @($localDepartments[$user.SID.Value])) {
+            if (-not $entry -or ($target -and $entry.name -ceq $target.Name)) {continue}
+            $old=Get-LocalGroup -SID $entry.sid -ErrorAction Stop
+            if ($old.Description -cne $entry.description -or $old.Name -cne $entry.name) {throw 'Department group changed during update'}
+            if (@([MetakampoLocalSam]::MemberSids($old.Name)) -contains $user.SID.Value) {Remove-LocalGroupMember -SID $old.SID -Member $user -ErrorAction Stop}
+        }
+        if ($target) {return [string]$target.Name}
+        return ''
+    }
     if ($previous -and $previous -cne $department) {
         $old=Department-Group $previous $false
         if ($old) {
@@ -43,4 +54,22 @@ function Set-DepartmentMembership($user,[string]$previous,[string]$department) {
     }
     if ($target) {return [string]$target.Name}
     return ''
+}
+
+# Local departments come exclusively from direct membership in validated owned groups.
+# User.Description is independent Windows data and must never be used as metadata.
+function Read-LocalDepartments {
+    $memberships=@{}
+    foreach ($group in @(Get-LocalGroup -ErrorAction Stop)) {
+        if ($group.Name -notlike 'MKD-*' -or -not ([string]$group.Description).StartsWith('Metakampo Department v1: ',[StringComparison]::Ordinal)) {continue}
+        if ([long]($group.SID.Value.Split('-')[-1]) -lt 1000) {continue}
+        $department=([string]$group.Description).Substring('Metakampo Department v1: '.Length)
+        try {$spec=Department-Spec $department} catch {continue}
+        if (-not $spec -or $group.Name -cne $spec.Name -or $group.Description -cne $spec.Description) {continue}
+        foreach ($sid in @([MetakampoLocalSam]::MemberSids($group.Name))) {
+            if (-not $memberships.ContainsKey($sid)) {$memberships[$sid]=@()}
+            $memberships[$sid]+=@{name=[string]$group.Name;sid=$group.SID;description=[string]$group.Description;department=$department}
+        }
+    }
+    return $memberships
 }

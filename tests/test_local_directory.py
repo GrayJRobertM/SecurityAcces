@@ -100,6 +100,17 @@ class LocalModeTests(unittest.TestCase):
         self.assertEqual(response.json['warning'],'Account created, group pending')
         with connection(self.app.db_path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM managed_passwords').fetchone()[0],1)
 
+    def test_local_export_does_not_infer_department_from_description(self):
+        import csv
+        self.users[0].update(department='',description='Legacy service account description')
+        inventory=self.client.get('/api/users').json['users'][0]
+        self.assertEqual(inventory['department'],'')
+        response=self.post('user-sync/export',dict(admin_password=self.password,include_passwords=False))
+        self.assertEqual(response.status_code,200)
+        row=next(csv.DictReader(io.StringIO(response.data.decode('utf-8-sig'))))
+        self.assertEqual(row['department'],'')
+        self.assertNotIn('Legacy service account description',response.get_data(as_text=True))
+
 
 class ModeSwitchTests(unittest.TestCase):
     def test_authenticated_switch_preserves_old_database_and_master_key(self):
@@ -129,7 +140,7 @@ class NativeLocalTests(unittest.TestCase):
             before=call_local('inventory');self.assertTrue(before['users']);self.assertEqual(before['source'],'windows-local')
             created=call_local('create',username=username,name='Metakampo CI test',department=department,password=generate_password(24))
             identifier=created['id'];self.assertTrue(identifier.startswith('S-1-5-21-'));self.assertTrue(created['stamp'])
-            with self.assertRaises(DirectoryConflict):call_local('create',username=username,name='Duplicate',department='CI',password=generate_password(24))
+            with self.assertRaises(DirectoryConflict):call_local('create',username=username,name='Duplicate',department=department,password=generate_password(24))
             stamps=call_local('stamps',identifiers=[identifier]);self.assertEqual(stamps['users'][0]['stamp'],created['stamp'])
             time.sleep(1.1)
             changed=call_local('reset',identifier=identifier,password=generate_password(24));self.assertNotEqual(created['stamp'],changed['stamp'])
@@ -171,6 +182,14 @@ class NativeLocalTests(unittest.TestCase):
             self.assertEqual(user['department'],dept2);self.assertFalse(user['enabled'])
             call_local('enable',identifier=identifier)
             self.assertTrue(next(u for u in call_local('list') if u['id']==identifier)['enabled'])
+            command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;Add-LocalGroupMember -Group $request.group -Member (Get-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid))"
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(group=old['name'],sid=identifier)),text=True,capture_output=True)
+            self.assertEqual(result.returncode,0)
+            user=next(u for u in call_local('list') if u['id']==identifier)
+            self.assertTrue(user['department_conflict']);self.assertEqual(user['department'],'')
+            call_local('department',identifier=identifier,department=dept2)
+            user=next(u for u in call_local('list') if u['id']==identifier)
+            self.assertFalse(user['department_conflict']);self.assertEqual(user['department'],dept2)
             # Refuse an existing group whose management marker has been removed.
             command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;Set-LocalGroup -Name $request.group -Description 'Unmanaged CI conflict'"
             result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(group=old['name'])),text=True,capture_output=True)
@@ -182,6 +201,33 @@ class NativeLocalTests(unittest.TestCase):
                 command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;. $request.helper;Remove-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid);foreach($d in @($request.a,$request.b)){$spec=Department-Spec $d;Get-LocalGroup -Name $spec.Name -ErrorAction SilentlyContinue | Remove-LocalGroup -ErrorAction Stop}"
                 result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(sid=identifier,a=dept1,b=dept2,helper=helper)),text=True,capture_output=True)
                 self.assertEqual(result.returncode,0,'Department CI cleanup failed')
+
+    def test_description_is_preserved_and_never_used_as_local_department(self):
+        import subprocess,json
+        username='mkds'+uuid.uuid4().hex[:12];identifier=None;department='CI '+username
+        description='Existing Windows description '+username
+        def command(script,**values):
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',"$ErrorActionPreference='Stop';$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;"+script],input=json.dumps(values),text=True,encoding='utf-8',capture_output=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            return result.stdout
+        def current():return next(u for u in call_local('list') if u['id']==identifier)
+        try:
+            raw=command("$password=ConvertTo-SecureString $request.password -AsPlainText -Force;$user=New-LocalUser -Name $request.username -Description $request.description -Password $password;[Console]::Write($user.SID.Value)",username=username,description=description,password=generate_password(24))
+            identifier=raw.strip();user=current()
+            self.assertEqual(user['description'],description);self.assertEqual(user['department'],'')
+            call_local('department',identifier=identifier,department=department)
+            user=current();self.assertEqual(user['description'],description);self.assertEqual(user['department'],department)
+            call_local('update',identifier=identifier,name='Updated without changing description',department=department,enabled=False)
+            self.assertEqual(current()['description'],description)
+            # Changing Description externally does not change the department.
+            command('Set-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid) -Description $request.description',sid=identifier,description='Another Windows description')
+            self.assertEqual(current()['department'],department)
+            # Membership is authoritative even when Description looks like a department.
+            command("$g=Get-LocalGroup | Where-Object Description -eq ('Metakampo Department v1: '+$request.department);Remove-LocalGroupMember -SID $g.SID -Member (Get-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid))",sid=identifier,department=department)
+            self.assertEqual(current()['department'],'');self.assertEqual(current()['description'],'Another Windows description')
+        finally:
+            if identifier:
+                command("Remove-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid);Get-LocalGroup | Where-Object Description -eq ('Metakampo Department v1: '+$request.department) | Remove-LocalGroup",sid=identifier,department=department)
 
     def test_existing_inventory_survives_unresolvable_administrator_members(self):
         import subprocess,json

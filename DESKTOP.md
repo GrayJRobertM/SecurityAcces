@@ -1,6 +1,6 @@
 # Metakampo Access · Aplicación Windows Server
 
-Versión 1.4.0, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+Versión 1.4.1, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
 
 ## Departamentos, grupos y estado de usuarios
 
@@ -8,7 +8,7 @@ En **Directorio de usuarios → Gestionar** puedes cambiar nombre, departamento 
 
 Al crear una cuenta o guardar su departamento, se crea un grupo de seguridad propio y se agrega la cuenta. En local pertenece al SAM de este servidor; en AD es Global/Security y se crea en la OU autorizada, por lo que la identidad delegada necesita crear grupos y modificar miembros además de sus permisos anteriores. Los nombres siguen `MKD-<hasta 7 letras/dígitos>-<hash de 8 caracteres>`; la descripción conserva el departamento y su marca de gestión. Se conserva exactamente la escritura del departamento: usa el mismo nombre para compartir grupo. Los grupos vacíos se conservan. No se conceden automáticamente permisos de Administradores ni RDP.
 
-Para cuentas ya existentes, asigna un departamento con **Gestionar** y usa **Sincronizar departamentos** para revisar y aplicar los grupos de todas las cuentas editables con departamento. El listado local usa el campo Descripción de Windows como departamento; revisa sus valores antes de sincronizar. El diálogo indica cuentas y departamentos, muestra progreso y detiene el lote al primer error. Reintentar es idempotente. No adopta grupos existentes sin la marca exacta ni modifica grupos de fuera de la OU. Al cambiar departamento agrega al grupo nuevo y retira solo la pertenencia al departamento anterior administrado por Metakampo. Otros grupos se conservan. No realiza rollback global: ante error puede haber operaciones parciales; verifica antes de reintentar.
+Para cuentas ya existentes, asigna un departamento con **Gestionar** y usa **Sincronizar departamentos** para revisar y aplicar los grupos de todas las cuentas editables con departamento. En modo local, el departamento se obtiene exclusivamente de la pertenencia directa a un grupo propio MKD con nombre y marca válidos. La Descripción de las propiedades del usuario es independiente: se muestra en Gestionar como solo lectura y nunca se sobrescribe al asignar departamento, editar nombre/estado o importar. Si no hay grupo propio, aparece Sin departamento; no se convierte la descripción automáticamente. Si pertenece a varios departamentos aparece Revisar departamento: elige uno en Gestionar para conservar esa pertenencia y retirar las otras de departamento, sin tocar grupos generales. El diálogo indica cuentas y departamentos, muestra progreso y detiene el lote al primer error. Reintentar es idempotente. No adopta grupos existentes sin la marca exacta ni modifica grupos de fuera de la OU. Al cambiar departamento agrega al grupo nuevo y retira solo la pertenencia al departamento anterior administrado por Metakampo. Otros grupos se conservan. No realiza rollback global: ante error puede haber operaciones parciales; verifica antes de reintentar.
 
 Si la cuenta se crea pero falla su asignación al grupo, la aplicación conserva y muestra su contraseña y presenta una advertencia para volver a guardar el departamento; no la recrees. La importación aplica la misma regla de grupos para altas y cambios de departamento. Una importación sin cambios de metadatos no fuerza grupos: usa Sincronizar departamentos.
 
@@ -121,3 +121,9 @@ El listado no realiza consultas WMI ni consultas ADSI por cada usuario. Los miem
 El estado de bloqueo no se obtiene al cargar el inventario. La acción **Desbloquear** queda disponible para cuentas locales no protegidas y solo consulta/modifica esa cuenta al confirmarla. Los campos Activo/Deshabilitado reflejan Enabled, no garantizan autorización de inicio de sesión. El límite de 45 segundos se conserva; no se oculta una consulta lenta aumentando el timeout.
 
 Si el nombre ya existe, se muestra un mensaje de cuenta duplicada y no se reemplaza ni cambia su contraseña.
+
+## Corrección 1.4.1: descripción y departamento independientes
+
+Las versiones anteriores usaban Description como departamento local. Desde 1.4.1 no se interpreta ni se modifica ese campo. Los grupos ya creados y sus miembros se conservan y permiten reconocer departamentos asignados por 1.4.0. Si antes se generaron grupos a partir de descripciones incorrectas, revisa cada cuenta en Gestionar y asigna el departamento correcto: se retirará su pertenencia a otros grupos propios de departamento, sin eliminar los grupos ni cambiar la descripción. No puede restaurarse automáticamente una descripción original que una versión anterior hubiera sobrescrito, porque no se almacenó una copia. No se infiere ni inventa ese texto.
+
+En AD se sigue usando el atributo Department real. Exportación y sincronización de cuentas locales usan la misma lectura por grupos; las descripciones no se exportan como departamentos. Si falla la lectura de grupos, el inventario conserva las cuentas en solo lectura con un aviso y no infiere departamentos.

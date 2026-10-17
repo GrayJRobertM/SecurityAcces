@@ -1,5 +1,12 @@
 # Cambios
 
+## 2026-10-16 — 1.4.1 Descripción independiente del departamento
+
+- Corrige el mapeo incorrecto de Description en cuentas locales: departamento leído solo desde pertenencias a grupos MKD validados.
+- Conserva Description al crear, editar e importar; muestra su valor por separado en Gestionar.
+- Detecta varios departamentos y permite resolverlos explícitamente sin alterar grupos generales.
+- Inventario y exportación no convierten descripciones en departamentos; AD conserva Department.
+
 ## 2026-10-16 — 1.4.0 Departamentos como grupos y elevación automática
 
 - Grupos de departamento propios en SAM y AD; pertenencia idempotente y cambio de departamento sin adoptar grupos ajenos.

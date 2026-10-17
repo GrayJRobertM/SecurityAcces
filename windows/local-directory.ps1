@@ -1,4 +1,4 @@
-# Local SAM only; secrets arrive over stdin and never appear in process arguments.
+﻿# Local SAM only; secrets arrive over stdin and never appear in process arguments.
 # No remote host, group elevation, deletion or domain-controller SAM operations are supported.
 $ErrorActionPreference='Stop'
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
@@ -35,7 +35,7 @@ try {
     }
     function Protected($user) {
         $rid=[long]($user.SID.Value.Split('-')[-1])
-        return (-not $elevated -or -not $adminsVerified -or $rid -lt 1000 -or $user.SID.Value -eq $identity.User.Value -or $admins -contains $user.SID.Value -or [string]$user.PrincipalSource -ne 'Local')
+        return (-not $elevated -or -not $adminsVerified -or -not $departmentsVerified -or $rid -lt 1000 -or $user.SID.Value -eq $identity.User.Value -or $admins -contains $user.SID.Value -or [string]$user.PrincipalSource -ne 'Local')
     }
     function Scoped($identifier) {
         if ([string]$identifier -notmatch '^S-1-5-21-\d+-\d+-\d+-\d+$') { throw 'Invalid local identifier' }
@@ -53,6 +53,13 @@ try {
     }
     function UserObject($user) { return [ADSI]("WinNT://"+$env:COMPUTERNAME+'/'+$user.Name+',user') }
     . ([IO.Path]::Combine($PSScriptRoot,'department-groups.ps1'))
+    $localDepartments=@{};$departmentsVerified=$true
+    if ($request.action -in 'list','inventory','create','update','department') {
+        try {$localDepartments=Read-LocalDepartments} catch {
+            $departmentsVerified=$false
+            if (-not $reading) {throw 'Department memberships unavailable'}
+        }
+    }
     $stage='dispatch'
     switch ($request.action) {
         'check' { $data=@{local=$true;computer=$env:COMPUTERNAME;scope=$scope} }
@@ -60,13 +67,15 @@ try {
             $items=@(Get-LocalUser -ErrorAction Stop | ForEach-Object {
                 # No WMI or per-user ADSI calls in the inventory path.
                 $localUser=$_
-                @{id=$localUser.SID.Value;name=$(if ($localUser.FullName) {$localUser.FullName} else {$localUser.Name});username=$localUser.Name;department=[string]$localUser.Description;upn=($env:COMPUTERNAME+'\'+$localUser.Name);enabled=$localUser.Enabled;locked=$false;lock_state_known=$false;protected=(Protected $localUser)}
+                $departments=@($localDepartments[$localUser.SID.Value] | Where-Object {$_} | ForEach-Object {$_.department})
+                @{id=$localUser.SID.Value;name=$(if ($localUser.FullName) {$localUser.FullName} else {$localUser.Name});username=$localUser.Name;department=$(if ($departments.Count -eq 1) {$departments[0]} else {''});description=[string]$localUser.Description;department_conflict=($departments.Count -gt 1);department_options=@($departments);upn=($env:COMPUTERNAME+'\'+$localUser.Name);enabled=$localUser.Enabled;locked=$false;lock_state_known=$false;protected=(Protected $localUser)}
             })
             if ($request.action -eq 'inventory') {
                 $warnings=@()
                 if (-not $elevated) {$warnings+='Abre Metakampo como administrador para realizar cambios. La lectura de cuentas sigue disponible.'}
                 if (-not $adminsVerified) {$warnings+='Windows no pudo verificar el grupo Administradores. Se muestran todas las cuentas en modo de solo lectura.'}
-                $data=@{users=@($items);source='windows-local';computer=$env:COMPUTERNAME;read_only=(-not $elevated -or -not $adminsVerified);warnings=@($warnings)}
+                if (-not $departmentsVerified) {$warnings+='No se pudieron verificar los grupos de departamento. Los departamentos no se infieren de la descripcion; cuentas en solo lectura.'}
+                $data=@{users=@($items);source='windows-local';computer=$env:COMPUTERNAME;read_only=(-not $elevated -or -not $adminsVerified -or -not $departmentsVerified);warnings=@($warnings)}
             } else {$data=@($items)}
         }
         'stamps' {
@@ -83,7 +92,7 @@ try {
             $enabled=if ($request.PSObject.Properties.Name -contains 'enabled') {[bool]$request.enabled} else {$true}
             $null=Department-Group ([string]$request.department)
             $stage='create'
-            $user=New-LocalUser -Name $request.username -FullName $request.name -Description ([string]$request.department) -Password $secure -Disabled:(-not $enabled) -ErrorAction Stop
+            $user=New-LocalUser -Name $request.username -FullName $request.name -Password $secure -Disabled:(-not $enabled) -ErrorAction Stop
             # Standard Users membership only; RDP rights remain controlled by Windows policy.
             $stage='group'
             Add-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-545') -Member $user -ErrorAction Stop
@@ -100,12 +109,11 @@ try {
                 'disable' {Disable-LocalUser -SID $user.SID -ErrorAction Stop}
                 'unlock' {$entry=UserObject $user;$entry.InvokeSet('IsAccountLocked',$false);$entry.CommitChanges()}
                 'department' {
-                    $group=Set-DepartmentMembership $user ([string]$user.Description) ([string]$request.department)
-                    Set-LocalUser -SID $user.SID -Description ([string]$request.department) -ErrorAction Stop
+                    $group=Set-DepartmentMembership $user '' ([string]$request.department)
                 }
                 'update' {
-                    $group=Set-DepartmentMembership $user ([string]$user.Description) ([string]$request.department)
-                    Set-LocalUser -SID $user.SID -FullName $request.name -Description ([string]$request.department) -ErrorAction Stop
+                    $group=Set-DepartmentMembership $user '' ([string]$request.department)
+                    Set-LocalUser -SID $user.SID -FullName $request.name -ErrorAction Stop
                     if ($request.enabled) {Enable-LocalUser -SID $user.SID} else {Disable-LocalUser -SID $user.SID}
                 }
             }
