@@ -28,6 +28,9 @@ class OperatorTests(unittest.TestCase):
         self.assertEqual(self.post(other,'vault/'+value['id']+'/reveal',dict(password=password)).json['password'],value['password'])
         events=other.get('/api/audit').json['events'];self.assertTrue(any(e['actor']=='soporte' and e['action']=='crear credencial' for e in events))
         self.assertNotIn(password,str(events))
+        for _ in range(8):self.assertEqual(self.post(other,'vault/'+value['id']+'/reveal',dict(password=password)).status_code,200)
+        self.assertEqual(self.post(other,'vault/'+value['id']+'/reveal',dict(password=password)).status_code,429)
+        self.assertEqual(self.post(self.client,'vault/'+value['id']+'/reveal',dict(password=self.password)).status_code,200)
         exported=self.post(other,'user-sync/export',dict(admin_password=password,include_passwords=False));self.assertEqual(exported.status_code,200)
         self.assertEqual(self.post(other,'operators',dict(username='tercero',name='Otro',admin_password=password)).status_code,201)
     def test_disable_and_reset_revoke_all_existing_sessions(self):

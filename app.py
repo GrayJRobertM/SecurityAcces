@@ -122,7 +122,7 @@ def create_app(overrides=None):
         return value.strip()
 
     def throttled(scope, limit=5):
-        address = (scope, request.remote_addr)
+        address = (scope, current_actor(), request.remote_addr)
         with attempts_lock:
             history = [t for t in attempts.get(address, []) if t > time.time()-900]
             if len(history) >= limit:
@@ -200,15 +200,16 @@ def create_app(overrides=None):
         data = request.get_json(silent=True) or {}
         username=data.get('username','')
         username=username.lower() if isinstance(username,str) and len(username)<=40 else ''
-        if throttled('login:'+username):
-            return jsonify(error='Demasiados intentos. Espera 15 minutos.'), 429
         stored=account_hash(db(),username)
+        login_scope='login:'+username if stored else 'login:desconocido'
+        if throttled(login_scope):
+            return jsonify(error='Demasiados intentos. Espera 15 minutos.'), 429
         password = data.get('password')
         if not isinstance(password,str) or len(password)>256 or not stored or not check_password_hash(stored,password):
             audit('inicio de sesión',username,'rechazado',actor=username or 'desconocido')
             return jsonify(error='Credenciales inválidas.'), 401
         with attempts_lock:
-            attempts.pop(('login:'+username,request.remote_addr),None)
+            attempts.pop((login_scope,current_actor(),request.remote_addr),None)
         old = session.get('auth','')
         session.clear()
         session.update(auth=secrets.token_hex(32), csrf=secrets.token_urlsafe(32))
