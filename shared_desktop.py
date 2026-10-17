@@ -110,9 +110,34 @@ def bridge_request(application,data,scope=None):
         return dict(status=response.status_code,headers=list(response.headers),body=base64.b64encode(body).decode())
 
 
+def allow_host_identity_query():
+    """Let interactive clients verify this process path, without reading its memory."""
+    k,a=_native();k.GetCurrentProcess.restype=W.HANDLE
+    a.ConvertStringSidToSidW.argtypes=[W.LPCWSTR,ctypes.POINTER(W.LPVOID)];a.ConvertStringSidToSidW.restype=W.BOOL
+    a.GetSecurityInfo.argtypes=[W.HANDLE,ctypes.c_int,W.DWORD,W.LPVOID,W.LPVOID,ctypes.POINTER(W.LPVOID),W.LPVOID,ctypes.POINTER(W.LPVOID)];a.GetSecurityInfo.restype=W.DWORD
+    a.SetSecurityInfo.argtypes=[W.HANDLE,ctypes.c_int,W.DWORD,W.LPVOID,W.LPVOID,W.LPVOID,W.LPVOID];a.SetSecurityInfo.restype=W.DWORD
+    class Trustee(ctypes.Structure):_fields_=[('multiple',W.LPVOID),('operation',ctypes.c_int),('form',ctypes.c_int),('kind',ctypes.c_int),('name',W.LPVOID)]
+    class Access(ctypes.Structure):_fields_=[('permissions',W.DWORD),('mode',ctypes.c_int),('inheritance',W.DWORD),('trustee',Trustee)]
+    a.SetEntriesInAclW.argtypes=[W.ULONG,ctypes.POINTER(Access),W.LPVOID,ctypes.POINTER(W.LPVOID)];a.SetEntriesInAclW.restype=W.DWORD
+    descriptor=W.LPVOID();old=W.LPVOID();new=W.LPVOID();sid=W.LPVOID()
+    try:
+        _check(a.ConvertStringSidToSidW('S-1-5-4',ctypes.byref(sid)))
+        error=a.GetSecurityInfo(k.GetCurrentProcess(),6,4,None,None,ctypes.byref(old),None,ctypes.byref(descriptor))
+        if error:raise ctypes.WinError(error)
+        entry=Access(0x1000,1,0,Trustee(None,0,0,2,sid))
+        error=a.SetEntriesInAclW(1,ctypes.byref(entry),old,ctypes.byref(new))
+        if error:raise ctypes.WinError(error)
+        error=a.SetSecurityInfo(k.GetCurrentProcess(),6,4,None,None,new,None)
+        if error:raise ctypes.WinError(error)
+    finally:
+        for pointer in (descriptor,new,sid):
+            if pointer:k.LocalFree(pointer)
+
+
 class PipeServer:
     def __init__(self,application,name=PIPE_NAME):
         self.application=application;self.name=name;self.k,self.a=_native();self.stopped=threading.Event();self.slots=threading.BoundedSemaphore(16)
+        allow_host_identity_query()
         self.first=self._create(True)
         self.thread=threading.Thread(target=self._run,daemon=True)
     def _create(self,first=False):

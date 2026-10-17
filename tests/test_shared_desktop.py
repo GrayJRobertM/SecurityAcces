@@ -65,7 +65,14 @@ class NativeSharedTests(unittest.TestCase):
             sid=run("$p=[Security.SecureString]::new();foreach($c in $r.password.ToCharArray()){$p.AppendChar($c)};$u=New-LocalUser -Name $r.username -Password $p;Add-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-545') -Member $u;[Console]::Write($u.SID.Value)")
             self.assertTrue(a.LogonUserW(username,'.',password,2,0,ctypes.byref(token)),ctypes.get_last_error())
             self.assertTrue(a.ImpersonateLoggedOnUser(token))
-            try:result=PipeClient(sys.executable,name=self.name).request(dict(method='GET',path='/api/check',headers={},body=''))
+            try:
+                from shared_desktop import _native
+                limited,_=_native()
+                self.assertFalse(limited.OpenProcess(0x10,False,os.getpid()),'Standard users must not read host process memory')
+                rogue=limited.CreateNamedPipeW(self.name,3,8,32,65536,65536,5000,None)
+                if rogue!=ctypes.c_void_p(-1).value:limited.CloseHandle(rogue)
+                self.assertEqual(rogue,ctypes.c_void_p(-1).value,'Clients must not create server instances')
+                result=PipeClient(sys.executable,name=self.name).request(dict(method='GET',path='/api/check',headers={},body=''))
             finally:self.assertTrue(a.RevertToSelf())
             self.assertEqual(json.loads(base64.b64decode(result['body']))['sid'],sid)
         finally:

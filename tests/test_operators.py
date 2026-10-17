@@ -45,3 +45,11 @@ class OperatorTests(unittest.TestCase):
         self.assertEqual(self.post(other,'operators/soporte/status',dict(enabled=False,admin_password=password)).status_code,400)
         self.assertEqual(self.post(other,'operators/admin/reset',dict(admin_password=password)).status_code,400)
         self.assertEqual(self.app.test_client().get('/api/operators').status_code,401)
+
+    def test_manual_administrator_password_has_no_minimum_or_complexity(self):
+        result=self.post(self.client,'operators',dict(username='simple',name='Manual',password='1',admin_password=self.password))
+        self.assertEqual(result.status_code,201);self.assertEqual(result.json['password'],'1')
+        other=self.app.test_client();self.login(other,'simple','1')
+        result=self.post(other,'operators/simple/reset',dict(password='a',admin_password='1'))
+        self.assertEqual(result.status_code,200);self.assertEqual(result.json['password'],'a')
+        self.login(other,'simple','a')

@@ -479,8 +479,8 @@ if __name__=='__main__':
     args=parser.parse_args()
     app=create_app()
     if args.init_admin:
-        first=getpass.getpass('Nueva contraseña del administrador (mínimo 15 caracteres): ')
-        if len(first)<15 or first!=getpass.getpass('Confirma la contraseña: '):
+        first=getpass.getpass('Nueva contraseña del administrador: ')
+        if not first or len(first)>256 or first!=getpass.getpass('Confirma la contraseña: '):
             raise SystemExit('La contraseña no cumple o la confirmación no coincide.')
         with connection(app.db_path) as db:
             db.execute('INSERT OR REPLACE INTO admin VALUES (1,?)',(generate_password_hash(first, method="pbkdf2:sha256:1000000"),))

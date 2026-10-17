@@ -2,6 +2,7 @@
 
 ## 2026-10-17 — 1.5.0 Administración compartida en sesiones RDP
 
+- Contraseñas administrativas elegidas libremente sin mínimo ni complejidad obligatoria; política Windows/AD conservada.
 - Cuentas individuales del gestor con administración completa, reautenticación propia y auditoría atribuida.
 - Cliente sin elevación en cada escritorio RDP del mismo servidor; propietario central elevado conserva base y DPAPI.
 - IPC local por named pipes con ACL restringida, rechazo de red y verificación del ejecutable servidor antes de enviar credenciales.

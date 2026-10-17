@@ -35,6 +35,11 @@ def register(app,db,audit,throttled,fresh_password):
         rows=[dict(row) for row in db().execute('SELECT username,name,enabled FROM app_operators ORDER BY name')]
         return jsonify(users=[dict(username='admin',name='Administrador propietario',enabled=True,protected=True)]+rows,current=current_actor())
 
+    def chosen_password(data):
+        value=data.get('password','')
+        if not isinstance(value,str) or len(value)>256:raise ValueError('Contraseña inválida.')
+        return value if value else fresh_password()
+
     def confirm(data):
         return not throttled('operators:'+current_actor(),15) and reauthenticate(db(),data.get('admin_password'))
 
@@ -45,7 +50,7 @@ def register(app,db,audit,throttled,fresh_password):
         username=data.get('username');name=data.get('name')
         if not isinstance(username,str) or not re.fullmatch('[A-Za-z0-9._-]{1,40}',username) or username.lower()=='admin':raise ValueError('Elige un usuario distinto de admin, con letras, números, punto, guion o guion bajo.')
         if not isinstance(name,str) or not name.strip() or len(name)>120 or any(ord(c)<32 for c in name):raise ValueError('Indica el nombre del administrador.')
-        username=username.lower();password=fresh_password()
+        username=username.lower();password=chosen_password(data)
         try:db().execute('INSERT INTO app_operators VALUES(?,?,?,1)',(username,name.strip(),generate_password_hash(password,method='pbkdf2:sha256:1000000')))
         except sqlite3.IntegrityError:return jsonify(error='Ese administrador ya existe.'),409
         audit('crear administrador del gestor',username)
@@ -59,7 +64,7 @@ def register(app,db,audit,throttled,fresh_password):
         if not db().execute('SELECT 1 FROM app_operators WHERE username=?',(username,)).fetchone():return jsonify(error='Administrador no encontrado.'),404
         password=None
         if action=='reset':
-            password=fresh_password();db().execute('UPDATE app_operators SET hash=? WHERE username=?',(generate_password_hash(password,method='pbkdf2:sha256:1000000'),username))
+            password=chosen_password(data);db().execute('UPDATE app_operators SET hash=? WHERE username=?',(generate_password_hash(password,method='pbkdf2:sha256:1000000'),username))
         else:
             enabled=data.get('enabled')
             if type(enabled) is not bool:raise ValueError('Estado inválido.')

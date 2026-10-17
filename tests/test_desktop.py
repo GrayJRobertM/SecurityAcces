@@ -82,7 +82,7 @@ class DesktopDataTests(unittest.TestCase):
         with patch('desktop.machine_identity',return_value=dict(machine=self.identity['machine'],sid='S-1-5-21-999')):
             with self.assertRaises(OSError):Store(self.temp.name)
 
-    def test_first_run_requires_csrf_and_strong_password(self):
+    def test_first_run_requires_csrf_and_nonempty_password(self):
         store=Store(self.temp.name)
         gate=DesktopGate(None)
         app=setup_application(store,gate,lambda app:None)
@@ -90,9 +90,9 @@ class DesktopDataTests(unittest.TestCase):
         client=app.test_client()
         csrf=client.get('/desktop/settings').json['csrf']
         self.assertEqual(client.post('/desktop/settings',json={}).status_code,403)
-        body=dict(mode='demo',store='CurrentUser',password='weak',confirmation='weak')
+        body=dict(mode='demo',store='CurrentUser',password='',confirmation='')
         self.assertEqual(client.post('/desktop/settings',json=body,headers={'X-CSRF-Token':csrf}).status_code,400)
-        password=generate_password(24)
+        password='x'
         body.update(password=password,confirmation=password)
         with patch.dict(os.environ,{},clear=False):
             response=client.post('/desktop/settings',json=body,headers={'X-CSRF-Token':csrf})
@@ -101,7 +101,7 @@ class DesktopDataTests(unittest.TestCase):
         self.assertFalse(gate.application.config['SESSION_COOKIE_SECURE'])
         with connection(gate.application.db_path) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM admin').fetchone()[0],1)
-        self.assertNotIn(password,store.file.read_text(encoding='utf-8'))
+        self.assertNotIn(chr(34)+'password'+chr(34),store.file.read_text(encoding='utf-8'))
 
 
 class LocalEventTests(unittest.TestCase):

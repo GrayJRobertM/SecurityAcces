@@ -180,9 +180,8 @@ def setup_application(store, gate, on_ready):
                         failures.append(time.time())
                     return jsonify(error='Confirma la contraseña administrativa de esta aplicación.'), 403
             else:
-                from security import CATEGORIES
-                if len(password) < 15 or not all(any(c in group for c in password) for group in CATEGORIES):
-                    raise ValueError('Elige una contraseña de al menos 15 caracteres con mayúsculas, minúsculas, números y símbolos.')
+                if not password:
+                    raise ValueError('Indica la contraseña del administrador.')
                 if password != data.get('confirmation'):
                     raise ValueError('La confirmación no coincide.')
             if settings['mode'] == 'ad':
