@@ -168,7 +168,7 @@ def create_app(overrides=None):
     @app.errorhandler(DirectoryError)
     def ad_error(exc):
         audit('operación de directorio', '', 'error o resultado por verificar')
-        return jsonify(error=str(exc)), 502
+        return jsonify(error=str(exc)), exc.status_code
 
     @app.errorhandler(RDPError)
     def rdp_error(exc):

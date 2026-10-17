@@ -9,7 +9,7 @@ from unittest.mock import patch
 from werkzeug.security import generate_password_hash
 from app import create_app
 from desktop import Store,DesktopGate,setup_application,validate_settings
-from directory import call_local,DirectoryError
+from directory import call_local,DirectoryError,DirectoryConflict
 from security import generate_password
 from storage import connection
 from user_sync import encrypt_package,decrypt_package
@@ -107,6 +107,7 @@ class NativeLocalTests(unittest.TestCase):
             before=call_local('inventory');self.assertTrue(before['users']);self.assertEqual(before['source'],'windows-local')
             created=call_local('create',username=username,name='Metakampo CI test',department='Disposable CI account',password=generate_password(24))
             identifier=created['id'];self.assertTrue(identifier.startswith('S-1-5-21-'));self.assertTrue(created['stamp'])
+            with self.assertRaises(DirectoryConflict):call_local('create',username=username,name='Duplicate',department='CI',password=generate_password(24))
             stamps=call_local('stamps',identifiers=[identifier]);self.assertEqual(stamps['users'][0]['stamp'],created['stamp'])
             time.sleep(1.1)
             changed=call_local('reset',identifier=identifier,password=generate_password(24));self.assertNotEqual(created['stamp'],changed['stamp'])
@@ -130,12 +131,26 @@ class NativeLocalTests(unittest.TestCase):
         script=Path(__file__).resolve().parents[1]/'windows'/'local-directory.ps1'
         with tempfile.TemporaryDirectory() as folder:
             wrapper=Path(folder)/'inventory-test.ps1'
-            wrapper.write_text("param([string]$Script)\nfunction global:Get-LocalGroupMember {throw 'CI simulated unresolved member'}\n& $Script\n")
+            wrapper.write_text("param([string]$Script)\nfunction global:Get-LocalGroup {throw 'CI simulated local group access failure'}\n& $Script\n")
             result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-File',str(wrapper),'-Script',str(script)],input=json.dumps(dict(action='inventory')),text=True,encoding='utf-8',capture_output=True)
             self.assertEqual(result.returncode,0,'Inventory must not fail when group lookup fails')
             data=json.loads(result.stdout.lstrip('\ufeff'))['data']
             self.assertTrue(data['users']);self.assertTrue(data['read_only']);self.assertTrue(data['warnings'])
             self.assertTrue(all(user['protected'] for user in data['users']))
+
+    def test_inventory_avoids_wmi_and_account_name_resolution(self):
+        import subprocess,json
+        from pathlib import Path
+        script=Path(__file__).resolve().parents[1]/'windows'/'local-directory.ps1'
+        with tempfile.TemporaryDirectory() as folder:
+            wrapper=Path(folder)/'fast-inventory.ps1'
+            wrapper.write_text("param([string]$Script)\nfunction global:Get-CimInstance {throw 'WMI must not be called'}\nfunction global:Get-LocalGroupMember {throw 'Name resolution must not be called'}\n& $Script\n")
+            started=time.monotonic()
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-File',str(wrapper),'-Script',str(script)],input=json.dumps(dict(action='inventory')),text=True,encoding='utf-8',capture_output=True,timeout=30)
+            self.assertLess(time.monotonic()-started,30)
+            data=json.loads(result.stdout.lstrip('\ufeff'))
+            self.assertTrue(data['ok']);self.assertTrue(data['data']['users']);self.assertFalse(data['data']['read_only'])
+            self.assertTrue(all(user['lock_state_known'] is False for user in data['data']['users']))
 
 
 class LocalTransportTests(unittest.TestCase):
@@ -146,6 +161,7 @@ class LocalTransportTests(unittest.TestCase):
         for stderr,code in [('PSSecurityException about_Execution_Policies','PS_POLICY'),('Microsoft.PowerShell.LocalAccounts failed module load','PS_MODULES'),('Unexpected startup failure','PS_RESPONSE')]:
             with self.assertRaises(DirectoryError) as caught:local_response(SimpleNamespace(stdout='',stderr=stderr+' '+secret,returncode=1))
             self.assertIn(code,str(caught.exception));self.assertNotIn(secret,str(caught.exception))
+        with self.assertRaises(DirectoryConflict):local_response(SimpleNamespace(stdout='{"ok":false,"exception":"Microsoft.PowerShell.Commands.UserExistsException"}',stderr='',returncode=1))
         self.assertEqual(local_response(SimpleNamespace(stdout='\ufeff{"ok":true,"data":[{"username":"existing"}]}',stderr='',returncode=0))[0]['username'],'existing')
     def test_local_powershell_uses_system_64_bit_location_not_path(self):
         from directory import local_powershell_path

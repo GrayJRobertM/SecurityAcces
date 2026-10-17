@@ -1,6 +1,6 @@
 # Metakampo Access · Aplicación Windows Server
 
-Versión 1.3.1, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+Versión 1.3.2, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
 
 ## Importar y exportar usuarios con contraseñas
 
@@ -97,3 +97,11 @@ En modo Usuarios locales, abre Directorio de usuarios: se consulta el SAM de Win
 La lectura ya no exige elevación: sin ella las cuentas se muestran protegidas/solo lectura. Si Windows no puede resolver un miembro del grupo Administradores, se conserva el listado completo, se muestra la advertencia y todas las cuentas quedan en solo lectura. Los cambios de cuentas y la configuración del modo local siguen requiriendo elevación y verificación de administradores. La lectura no modifica cuentas ni obtiene sus contraseñas.
 
 En 1.3.1 el adaptador fija la ruta de Windows PowerShell de 64 bits (System32/Sysnative) y carga los módulos oficiales desde PSHOME, sin depender de PATH ni PSModulePath personalizados. No modifica ExecutionPolicy. Si una política, firma, antivirus, módulo ausente o tiempo de espera bloquea el proceso, la interfaz indica un código PS_POLICY, PS_MODULES, PS_LAUNCH, PS_TIMEOUT o PS_RESPONSE en lugar de ocultarlo detrás de un error genérico. Si persiste el problema, conserva ese código para diagnóstico; la causa exacta en el servidor del usuario requiere esa evidencia.
+
+## Inventario rápido (1.3.2)
+
+El listado no realiza consultas WMI ni consultas ADSI por cada usuario. Los miembros de Administradores se comprueban por SID con NetLocalGroupGetMembers nivel 0, consultando solo el SAM local sin traducir nombres de cuentas de dominio. Se conserva la protección de cuentas; si no puede verificarse el grupo, el inventario se muestra solo en lectura. El tipo de servidor se lee del registro, sin modificarlo; controladores de dominio siguen excluidos del modo local.
+
+El estado de bloqueo no se obtiene al cargar el inventario. La acción **Desbloquear** queda disponible para cuentas locales no protegidas y solo consulta/modifica esa cuenta al confirmarla. Los campos Activo/Deshabilitado reflejan Enabled, no garantizan autorización de inicio de sesión. El límite de 45 segundos se conserva; no se oculta una consulta lenta aumentando el timeout.
+
+Si el nombre ya existe, se muestra un mensaje de cuenta duplicada y no se reemplaza ni cambia su contraseña.

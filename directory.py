@@ -5,7 +5,10 @@ import subprocess
 from pathlib import Path
 
 class DirectoryError(Exception):
-    pass
+    status_code=502
+
+class DirectoryConflict(DirectoryError):
+    status_code=409
 
 def call_ad(action, **values):
     if os.name != 'nt':
@@ -47,6 +50,8 @@ def local_response(result):
             raise DirectoryError('No se pudieron cargar los módulos de Windows PowerShell de 64 bits. Revisa la instalación de Windows PowerShell y LocalAccounts. [PS_MODULES]') from None
         raise DirectoryError('Windows PowerShell no devolvió un inventario válido. Verifica que el antivirus no haya bloqueado el script y que Windows PowerShell funcione en este servidor. [PS_RESPONSE]') from None
     if result.returncode or not response.get('ok'):
+        if str(response.get('exception','')).endswith('.UserExistsException'):
+            raise DirectoryConflict('Ya existe una cuenta local con ese nombre. Actualiza el Directorio de usuarios para administrarla o elige otro nombre para una cuenta nueva.')
         stage=response.get('stage','');category=response.get('category','');exception=response.get('exception','')
         diagnostics=' ['+','.join(str(value) for value in (stage,category,exception,response.get('line','')) if value)+']'
         raise DirectoryError('Windows rechazó la operación local. Abre Metakampo como administrador para realizar cambios; revisa cuentas protegidas, políticas y el estado real antes de reintentar. El modo local no admite controladores de dominio.'+diagnostics)

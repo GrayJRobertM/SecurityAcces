@@ -7,11 +7,10 @@ try {
     # Windows PowerShell Utility/Management are built-in snap-ins, not module manifests.
     # Search standard modules first without changing machine/user environment settings.
     $env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')+';'+$env:PSModulePath
-    Import-Module CimCmdlets -ErrorAction Stop
     Import-Module Microsoft.PowerShell.LocalAccounts -ErrorAction Stop
     $request=[Console]::In.ReadToEnd() | ConvertFrom-Json
-    $os=Get-CimInstance Win32_OperatingSystem
-    if ($os.ProductType -ne 3) { throw 'Requires member or standalone Windows Server' }
+    $productType=[string](Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\ProductOptions' -Name ProductType -ErrorAction Stop).ProductType
+    if ($productType -ne 'ServerNT') { throw 'Requires member or standalone Windows Server' }
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
     $elevated=([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     $reading=$request.action -in 'list','inventory'
@@ -21,7 +20,9 @@ try {
     # Listing is independent of group-name resolution. Unverifiable rights stay read-only.
     $admins=@();$adminsVerified=$false
     try {
-        $admins=@(Get-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop | ForEach-Object {$_.SID.Value})
+        $adminGroup=Get-LocalGroup -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop
+        if (-not ('MetakampoLocalSam' -as [type])) {Add-Type -Path ([IO.Path]::Combine($PSScriptRoot,'local-sam.cs')) -ErrorAction Stop}
+        $admins=@([MetakampoLocalSam]::MemberSids($adminGroup.Name))
         $adminsVerified=$true
     } catch {
         if (-not $reading) {throw 'Administrator membership unavailable'}
@@ -56,11 +57,9 @@ try {
         'check' { $data=@{local=$true;computer=$env:COMPUTERNAME;scope=$scope} }
         {$_ -in 'list','inventory'} {
             $items=@(Get-LocalUser -ErrorAction Stop | ForEach-Object {
-                # Keep the account reference stable if an optional ADSI lookup throws.
+                # No WMI or per-user ADSI calls in the inventory path.
                 $localUser=$_
-                $locked=$false
-                try {$locked=[bool](UserObject $localUser).InvokeGet('IsAccountLocked')} catch {}
-                @{id=$localUser.SID.Value;name=$(if ($localUser.FullName) {$localUser.FullName} else {$localUser.Name});username=$localUser.Name;department=[string]$localUser.Description;upn=($env:COMPUTERNAME+'\'+$localUser.Name);enabled=$localUser.Enabled;locked=$locked;protected=(Protected $localUser)}
+                @{id=$localUser.SID.Value;name=$(if ($localUser.FullName) {$localUser.FullName} else {$localUser.Name});username=$localUser.Name;department=[string]$localUser.Description;upn=($env:COMPUTERNAME+'\'+$localUser.Name);enabled=$localUser.Enabled;locked=$false;lock_state_known=$false;protected=(Protected $localUser)}
             })
             if ($request.action -eq 'inventory') {
                 $warnings=@()

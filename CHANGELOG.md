@@ -72,3 +72,11 @@
 - Detección explícita limpia filtros; importación de archivos diferenciada de la detección del servidor.
 - Prueba nativa preserva cuentas anteriores y simula un fallo de resolución de Administradores.
 - PowerShell de 64 bits por ruta absoluta, módulos estándar desde PSHOME y diagnóstico de fallos de arranque sin mostrar stderr ni credenciales.
+
+# 1.3.2 · Inventario SAM sin consultas lentas por cuenta
+
+- Retira WMI y consultas ADSI de bloqueo del inventario.
+- Verifica Administradores por SID con NetLocalGroupGetMembers nivel 0, sin traducción de nombres de miembros.
+- Mantiene salvaguardas, modo de solo lectura y límite de 45 segundos.
+- Desbloqueo explícito para usuarios locales sin precargar su estado; duplicados generan un mensaje claro y HTTP 409.
+- Prueba nativa bloquea WMI/resolución de nombres y comprueba listado en menos de 30 segundos.
