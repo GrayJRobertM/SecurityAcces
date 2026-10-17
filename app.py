@@ -243,11 +243,11 @@ def create_app(overrides=None):
             db().execute('INSERT INTO users VALUES (?,?,?,?,1)',(identifier,name,username,department))
             remember_user_password(db(),key,identifier,username,password,db().execute('SELECT identifier FROM sync_instance').fetchone()[0],str(uuid.uuid4()))
         audit('crear usuario',username)
-        return jsonify(password=password, message='Usuario local creado. La contraseña respeta la política de Windows.' if app.config['MODE']=='local' else 'Usuario creado. Debe cambiar la contraseña al iniciar sesión.'),201
+        return jsonify(password=password, warning=result.get('warning','') if app.config['MODE']!='demo' else '', message='Usuario local creado. La contraseña respeta la política de Windows.' if app.config['MODE']=='local' else 'Usuario creado. Debe cambiar la contraseña al iniciar sesión.'),201
 
     @app.post('/api/users/<identifier>/<action>')
     def user_action(identifier,action):
-        if action not in ('reset','enable','disable','unlock'):
+        if action not in ('reset','enable','disable','unlock','update','department'):
             raise ValueError('Operación no permitida.')
         if app.config['MODE']=='local':
             if not re.fullmatch(r'S-1-5-21-\d+-\d+-\d+-\d+',identifier):
@@ -257,9 +257,17 @@ def create_app(overrides=None):
                 uuid.UUID(identifier)
             except ValueError:
                 raise ValueError('Identificador inválido.')
+        changes={}
+        if action in ('update','department'):
+            data=request.get_json() or {}
+            changes['department']=text_field(data,'department')
+            if action=='update':
+                changes['name']=text_field(data,'name')
+                if type(data.get('enabled')) is not bool:raise ValueError('El estado debe ser activo o inactivo.')
+                changes['enabled']=data['enabled']
         password = fresh_password() if action=='reset' else None
         if app.config['MODE']!='demo':
-            result=native_directory(action, identifier=identifier, **({'password':password} if password else {}))
+            result=native_directory(action, identifier=identifier, **changes, **({'password':password} if password else {}))
             if password and result and result.get('username'):
                 remember_user_password(db(),key,identifier,result['username'],password,result.get('domain_guid',''),result.get('stamp',''))
         else:
@@ -268,6 +276,10 @@ def create_app(overrides=None):
             if password:
                 username=db().execute('SELECT username FROM users WHERE id=?',(identifier,)).fetchone()[0]
                 remember_user_password(db(),key,identifier,username,password,db().execute('SELECT identifier FROM sync_instance').fetchone()[0],str(uuid.uuid4()))
+            if action=='department':
+                db().execute('UPDATE users SET department=? WHERE id=?',(changes['department'],identifier))
+            if action=='update':
+                db().execute('UPDATE users SET name=?,department=?,enabled=? WHERE id=?',(changes['name'],changes['department'],changes['enabled'],identifier))
             if action in ('enable','disable'):
                 db().execute('UPDATE users SET enabled=? WHERE id=?',(action=='enable',identifier))
         audit(action,identifier)

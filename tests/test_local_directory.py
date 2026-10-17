@@ -79,6 +79,27 @@ class LocalModeTests(unittest.TestCase):
         self.assertTrue(any(call.args[0]=='reset' for call in self.native_mock.call_args_list))
         self.assertEqual(self.post('user-sync/password/'+self.identifier,dict(admin_password=self.password)).json['password'],secret)
 
+    def test_edit_department_and_state_validate_and_route_changes(self):
+        path='users/'+self.identifier+'/update'
+        for enabled in ('false',0,None):
+            self.assertEqual(self.post(path,dict(name='Test',department='IT',enabled=enabled)).status_code,400)
+        self.assertEqual(self.post(path,dict(name='Updated',department='Finance',enabled=False)).status_code,200)
+        self.native_mock.assert_called_with('update',identifier=self.identifier,name='Updated',department='Finance',enabled=False)
+        self.assertEqual(self.post('users/'+self.identifier+'/department',dict(department='IT')).status_code,200)
+        self.native_mock.assert_called_with('department',identifier=self.identifier,department='IT')
+        self.assertEqual(self.post('users/'+self.identifier+'/department',dict(department='')).status_code,400)
+
+    def test_partial_create_keeps_password_and_exposes_group_warning(self):
+        def partial(action,**kwargs):
+            value=self.native(action,**kwargs)
+            if action=='create':value['warning']='Account created, group pending'
+            return value
+        self.native_mock.side_effect=partial
+        response=self.post('users',dict(name='Test',username='test',department='IT'))
+        self.assertEqual(response.status_code,201);self.assertTrue(response.json['password'])
+        self.assertEqual(response.json['warning'],'Account created, group pending')
+        with connection(self.app.db_path) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM managed_passwords').fetchone()[0],1)
+
 
 class ModeSwitchTests(unittest.TestCase):
     def test_authenticated_switch_preserves_old_database_and_master_key(self):
@@ -102,10 +123,11 @@ class NativeLocalTests(unittest.TestCase):
     def test_create_reset_disable_stamp_and_admin_protection_on_windows(self):
         import subprocess,json
         username='mkci'+uuid.uuid4().hex[:12];identifier=None
+        department='CI '+username
         try:
             check=call_local('check');self.assertTrue(check['local'])
             before=call_local('inventory');self.assertTrue(before['users']);self.assertEqual(before['source'],'windows-local')
-            created=call_local('create',username=username,name='Metakampo CI test',department='Disposable CI account',password=generate_password(24))
+            created=call_local('create',username=username,name='Metakampo CI test',department=department,password=generate_password(24))
             identifier=created['id'];self.assertTrue(identifier.startswith('S-1-5-21-'));self.assertTrue(created['stamp'])
             with self.assertRaises(DirectoryConflict):call_local('create',username=username,name='Duplicate',department='CI',password=generate_password(24))
             stamps=call_local('stamps',identifiers=[identifier]);self.assertEqual(stamps['users'][0]['stamp'],created['stamp'])
@@ -121,9 +143,45 @@ class NativeLocalTests(unittest.TestCase):
         finally:
             if identifier:
                 # Cleanup only this newly created CI account, never existing accounts.
-                command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;Remove-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid) -ErrorAction Stop"
-                result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(sid=identifier)),text=True,capture_output=True)
+                command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;Remove-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid) -ErrorAction Stop;Get-LocalGroup | Where-Object Description -eq ('Metakampo Department v1: '+$request.department) | Remove-LocalGroup -ErrorAction Stop"
+                result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(sid=identifier,department=department)),text=True,capture_output=True)
                 self.assertEqual(result.returncode,0,'CI account cleanup failed')
+
+    def test_department_membership_move_idempotence_conflict_and_state(self):
+        import subprocess,json
+        from pathlib import Path
+        username='mkdp'+uuid.uuid4().hex[:12];identifier=None
+        dept1='CI A '+username;dept2='CI B '+username
+        helper=str(Path(__file__).resolve().parents[1]/'windows'/'department-groups.ps1')
+        def inspect():
+            command="Get-LocalGroup | Where-Object {$_.Description -in @(('Metakampo Department v1: '+$request.a),('Metakampo Department v1: '+$request.b))} | ForEach-Object {@{name=$_.Name;department=$_.Description;members=@(Get-LocalGroupMember -SID $_.SID | ForEach-Object {$_.SID.Value})}} | ConvertTo-Json -Depth 5 -Compress"
+            wrapper="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;"+command
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',wrapper],input=json.dumps(dict(a=dept1,b=dept2)),text=True,capture_output=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            groups=json.loads(result.stdout);return groups if isinstance(groups,list) else [groups]
+        try:
+            created=call_local('create',username=username,name='Department CI',department=dept1,password=generate_password(24));identifier=created['id']
+            self.assertFalse(created.get('warning'));self.assertIn(identifier,inspect()[0]['members'])
+            call_local('department',identifier=identifier,department=dept1)
+            self.assertEqual(inspect()[0]['members'].count(identifier),1)
+            call_local('update',identifier=identifier,name='Department CI updated',department=dept2,enabled=False)
+            groups=inspect();old=next(g for g in groups if g['department'].endswith(dept1));new=next(g for g in groups if g['department'].endswith(dept2))
+            self.assertNotIn(identifier,old['members']);self.assertIn(identifier,new['members'])
+            user=next(u for u in call_local('list') if u['id']==identifier)
+            self.assertEqual(user['department'],dept2);self.assertFalse(user['enabled'])
+            call_local('enable',identifier=identifier)
+            self.assertTrue(next(u for u in call_local('list') if u['id']==identifier)['enabled'])
+            # Refuse an existing group whose management marker has been removed.
+            command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;Set-LocalGroup -Name $request.group -Description 'Unmanaged CI conflict'"
+            result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(group=old['name'])),text=True,capture_output=True)
+            self.assertEqual(result.returncode,0)
+            with self.assertRaises(DirectoryError):call_local('department',identifier=identifier,department=dept1)
+        finally:
+            if identifier:
+                # Only names/SID created by this test; never touch pre-existing accounts/groups.
+                command="$request=[Console]::In.ReadToEnd()|ConvertFrom-Json;. $request.helper;Remove-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid);foreach($d in @($request.a,$request.b)){$spec=Department-Spec $d;Get-LocalGroup -Name $spec.Name -ErrorAction SilentlyContinue | Remove-LocalGroup -ErrorAction Stop}"
+                result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(sid=identifier,a=dept1,b=dept2,helper=helper)),text=True,capture_output=True)
+                self.assertEqual(result.returncode,0,'Department CI cleanup failed')
 
     def test_existing_inventory_survives_unresolvable_administrator_members(self):
         import subprocess,json

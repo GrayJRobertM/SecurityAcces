@@ -74,6 +74,10 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(self.post('users/'+identifier+'/disable').status_code,200)
         user=next(u for u in self.client.get('/api/users').json['users'] if u['id']==identifier)
         self.assertFalse(user['enabled'])
+        changed=self.post('users/'+identifier+'/update',dict(name='Prueba actualizada',department='Finanzas',enabled=True))
+        self.assertEqual(changed.status_code,200)
+        user=next(u for u in self.client.get('/api/users').json['users'] if u['id']==identifier)
+        self.assertEqual(user['department'],'Finanzas');self.assertTrue(user['enabled'])
         self.assertEqual(self.post('users',{'name':'Prueba','username':'prueba','department':'TI'}).status_code,409)
     def test_policy_limits_and_persistence(self):
         self.login()

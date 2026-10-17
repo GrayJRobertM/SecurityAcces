@@ -1,6 +1,22 @@
 # Metakampo Access · Aplicación Windows Server
 
-Versión 1.3.2, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+Versión 1.4.0, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+
+## Departamentos, grupos y estado de usuarios
+
+En **Directorio de usuarios → Gestionar** puedes cambiar nombre, departamento y estado **Activo / Inactivo**. Activo habilita la cuenta; Inactivo deshabilita nuevos inicios de sesión. Las sesiones RDP existentes no se cierran automáticamente. Las cuentas protegidas conservan sus restricciones.
+
+Al crear una cuenta o guardar su departamento, se crea un grupo de seguridad propio y se agrega la cuenta. En local pertenece al SAM de este servidor; en AD es Global/Security y se crea en la OU autorizada, por lo que la identidad delegada necesita crear grupos y modificar miembros además de sus permisos anteriores. Los nombres siguen `MKD-<hasta 7 letras/dígitos>-<hash de 8 caracteres>`; la descripción conserva el departamento y su marca de gestión. Se conserva exactamente la escritura del departamento: usa el mismo nombre para compartir grupo. Los grupos vacíos se conservan. No se conceden automáticamente permisos de Administradores ni RDP.
+
+Para cuentas ya existentes, asigna un departamento con **Gestionar** y usa **Sincronizar departamentos** para revisar y aplicar los grupos de todas las cuentas editables con departamento. El listado local usa el campo Descripción de Windows como departamento; revisa sus valores antes de sincronizar. El diálogo indica cuentas y departamentos, muestra progreso y detiene el lote al primer error. Reintentar es idempotente. No adopta grupos existentes sin la marca exacta ni modifica grupos de fuera de la OU. Al cambiar departamento agrega al grupo nuevo y retira solo la pertenencia al departamento anterior administrado por Metakampo. Otros grupos se conservan. No realiza rollback global: ante error puede haber operaciones parciales; verifica antes de reintentar.
+
+Si la cuenta se crea pero falla su asignación al grupo, la aplicación conserva y muestra su contraseña y presenta una advertencia para volver a guardar el departamento; no la recrees. La importación aplica la misma regla de grupos para altas y cambios de departamento. Una importación sin cambios de metadatos no fuerza grupos: usa Sincronizar departamentos.
+
+## Abrir con doble clic
+
+El ejecutable incluye un manifiesto `requireAdministrator`. Abre el acceso directo normalmente; Windows solicita elevación cuando corresponde sin usar clic derecho → Ejecutar como administrador. No se desactiva UAC ni se guardan credenciales de Windows, y no se instala una tarea para eludir la confirmación. La contraseña administrativa interna del gestor sigue siendo independiente.
+
+Utiliza la misma cuenta Windows con la que configuraste la instalación, debido a la protección DPAPI por usuario. Si Windows pide credenciales de otra cuenta y se usan, se abriría el perfil de esa otra identidad, no la bóveda del usuario original. La prueba de instalación verifica el manifiesto del EXE y la apertura en Windows Server 2022; Server 2019 directo y AD real siguen pendientes.
 
 ## Importar y exportar usuarios con contraseñas
 
@@ -12,7 +28,7 @@ Con **Incluir contraseñas**, se genera un archivo `.fksync` cifrado con AES-256
 
 Las instalaciones que consultan el **mismo AD** comparten naturalmente las cuentas. Si el archivo coincide con el mismo dominio, GUID y versión de contraseña, la importación sincroniza la copia local sin volver a cambiar la clave en AD. Un archivo antiguo o un controlador cuya versión aún no coincide se rechaza; comprueba replicación y vuelve a exportar. En un dominio diferente, la vista previa indica las altas y contraseñas que se restablecerán. AD puede rechazarlas por su política o permisos; no se omiten esos controles. Las altas y restablecimientos conservan el cambio obligatorio al próximo inicio de sesión; cuando el usuario cambie su clave el gestor ya no podrá exportar aquella contraseña inicial como vigente.
 
-El CSV UTF-8 **sin contraseñas** utiliza exactamente `username,name,department,enabled`; `enabled` acepta true/false o 1/0. Se admite coma o punto y coma. Las contraseñas en CSV no se aceptan: usa `.fksync`. Los campos exportados que podrían interpretarse como fórmulas de hoja de cálculo se escapan. Los nombres de cuenta se usan como clave de conciliación (sin distinguir mayúsculas); no se renombran, eliminan ni asignan grupos. Se actualizan nombre mostrado, departamento y habilitación/deshabilitación. Las cuentas ausentes del archivo permanecen intactas. Cada archivo admite hasta 500 cuentas y 1 MiB.
+El CSV UTF-8 **sin contraseñas** utiliza exactamente `username,name,department,enabled`; `enabled` acepta true/false o 1/0. Se admite coma o punto y coma. Las contraseñas en CSV no se aceptan: usa `.fksync`. Los campos exportados que podrían interpretarse como fórmulas de hoja de cálculo se escapan. Los nombres de cuenta se usan como clave de conciliación (sin distinguir mayúsculas); no se renombran ni eliminan. Crear cuentas o actualizar su departamento también sincroniza el grupo de departamento propio de Metakampo. Se actualizan nombre mostrado, departamento y habilitación/deshabilitación. Las cuentas ausentes del archivo permanecen intactas. Cada archivo admite hasta 500 cuentas y 1 MiB.
 
 La vista previa no hace cambios y caduca en 15 minutos, está ligada a la sesión y se utiliza una vez. Se verifica de nuevo el directorio y las versiones de contraseña antes de aplicar. Revisa especialmente los cambios de estado y los restablecimientos. La importación se procesa en segundo plano dentro de la aplicación y registra su progreso en **Historial de importaciones**. Mantén la ventana abierta. Si hay un fallo o se cierra la aplicación, el lote queda parcial/interrumpido y no se reintenta automáticamente; comprueba AD antes de previsualizar otra vez. No existe transacción distribuida ni rollback global de AD. En un dominio con administradores concurrentes pueden producirse cambios externos durante el lote; la comprobación de metadatos es una detección de cambios, no una autenticación de cada contraseña.
 

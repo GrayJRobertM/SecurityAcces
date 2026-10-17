@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const icon = name => `<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
-const state = {csrf:'', users:[], view:'dashboard', secretTimer:null, rdpDemo:true, desktop:false, mode:"demo"};
+const state = {csrf:'', users:[], view:'dashboard', secretTimer:null, rdpDemo:true, desktop:false, mode:"demo", departmentSyncBusy:false};
 const pages = {
  map:['Mapa de accesos','Consulta desde dónde se registran los accesos y los intentos de conexión.',null],
  dashboard:['Dashboard de uso','Accesos observados en Windows, usuarios y servidores en un solo lugar.',null],
@@ -57,7 +57,7 @@ async function loadUsers(){
  $('users-body').innerHTML='<tr><td colspan="4" class="empty" aria-live="polite">Consultando el directorio…</td></tr>';
  busy($('refresh-users'),true);
  try{
-  const inventory=await api('users');state.users=inventory.users;
+  const inventory=await api('users');state.users=inventory.users;$('sync-departments').disabled=Boolean(inventory.read_only)||!state.users.some(u=>!u.protected&&u.department&&u.department.trim());
   if(state.mode==='local'){const notice=$('local-inventory-info');notice.hidden=false;notice.textContent=`${state.users.length} cuentas detectadas directamente en ${inventory.computer||'este servidor'}. No necesitas importar un archivo para ver las cuentas existentes. `+(inventory.warnings||[]).join(' ');$('page-action').disabled=Boolean(inventory.read_only);}
   $('total-users').textContent=state.users.length;$('active-users').textContent=state.users.filter(u=>u.enabled).length;$('disabled-users').textContent=state.users.filter(u=>!u.enabled).length;
   renderUsers();
@@ -67,7 +67,7 @@ async function loadUsers(){
 function renderUsers(){
  const query=$('search').value.toLocaleLowerCase('es');const status=$('status-filter').value;
  const values=state.users.filter(u=>[u.name,u.username,u.department].join(' ').toLocaleLowerCase('es').includes(query)&&(status==='all'||Boolean(u.enabled)===(status==='active')));
- $('users-body').innerHTML=values.map(u=>`<tr><td><div class="user-cell"><span class="avatar" aria-hidden="true">${esc(u.name.split(' ').filter(Boolean).slice(0,2).map(n=>n[0]).join(''))}</span><div><strong>${esc(u.name)}</strong><small>${esc(u.username)}</small></div></div></td><td>${esc(u.department||'Sin departamento')}</td><td><span class="badge ${u.enabled?'active':''}">${u.enabled?'Activo':'Deshabilitado'}</span>${u.protected?'<small class="muted">Cuenta protegida</small>':''}</td><td><div class="row-actions"><button class="icon-button" ${u.protected?'disabled':''} data-user-password="${esc(u.id)}" aria-label="Consultar contraseña administrada de ${esc(u.name)}" title="Consultar contraseña administrada">${icon('eye')}</button><button class="icon-button" data-rdp-user="${esc(u.id)}" aria-label="Generar cliente RDP para ${esc(u.name)}" title="Generar cliente RDP">${icon('computer')}</button><button class="icon-button" ${u.protected?'disabled':''} data-action="reset" data-id="${esc(u.id)}" aria-label="Restablecer contraseña de ${esc(u.name)}" title="Restablecer contraseña">${icon('key')}</button><button class="icon-button" ${u.protected?'disabled':''} data-action="${u.enabled?'disable':'enable'}" data-id="${esc(u.id)}" aria-label="${u.enabled?'Deshabilitar':'Habilitar'} a ${esc(u.name)}" title="${u.enabled?'Deshabilitar':'Habilitar'} cuenta">${icon(u.enabled?'disable':'check')}</button>${(u.locked||(state.mode==='local'&&u.lock_state_known===false))&&!u.protected?`<button class="icon-button" ${u.protected?'disabled':''} data-action="unlock" data-id="${esc(u.id)}" aria-label="Desbloquear a ${esc(u.name)}">${icon('unlock')}</button>`:''}</div></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No hay usuarios que coincidan con tu búsqueda.</td></tr>';
+ $('users-body').innerHTML=values.map(u=>`<tr><td><div class="user-cell"><span class="avatar" aria-hidden="true">${esc(u.name.split(' ').filter(Boolean).slice(0,2).map(n=>n[0]).join(''))}</span><div><strong>${esc(u.name)}</strong><small>${esc(u.username)}</small></div></div></td><td>${esc(u.department||'Sin departamento')}</td><td><span class="badge ${u.enabled?'active':''}">${u.enabled?'Activo':'Inactivo'}</span>${u.protected?'<small class="muted">Cuenta protegida</small>':''}</td><td><div class="row-actions"><button class="secondary" ${u.protected?'disabled':''} data-edit-user="${esc(u.id)}">Gestionar</button><button class="icon-button" ${u.protected?'disabled':''} data-user-password="${esc(u.id)}" aria-label="Consultar contraseña administrada de ${esc(u.name)}" title="Consultar contraseña administrada">${icon('eye')}</button><button class="icon-button" data-rdp-user="${esc(u.id)}" aria-label="Generar cliente RDP para ${esc(u.name)}" title="Generar cliente RDP">${icon('computer')}</button><button class="icon-button" ${u.protected?'disabled':''} data-action="reset" data-id="${esc(u.id)}" aria-label="Restablecer contraseña de ${esc(u.name)}" title="Restablecer contraseña">${icon('key')}</button><button class="icon-button" ${u.protected?'disabled':''} data-action="${u.enabled?'disable':'enable'}" data-id="${esc(u.id)}" aria-label="${u.enabled?'Deshabilitar':'Habilitar'} a ${esc(u.name)}" title="${u.enabled?'Deshabilitar':'Habilitar'} cuenta">${icon(u.enabled?'disable':'check')}</button>${(u.locked||(state.mode==='local'&&u.lock_state_known===false))&&!u.protected?`<button class="icon-button" ${u.protected?'disabled':''} data-action="unlock" data-id="${esc(u.id)}" aria-label="Desbloquear a ${esc(u.name)}">${icon('unlock')}</button>`:''}</div></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No hay usuarios que coincidan con tu búsqueda.</td></tr>';
  $('user-count').textContent=`${values.length} de ${state.users.length} usuarios`;
 }
 async function loadVault(){
@@ -81,7 +81,7 @@ async function loadAudit(){
  $('audit-body').innerHTML=values.map(e=>`<tr><td>${esc(new Date(e.at.replace(' ','T')+'Z').toLocaleString('es-MX'))}</td><td>${esc(e.actor)}</td><td>${esc(e.action)}</td><td>${esc(e.target||'—')}</td><td><span class="badge">${esc(e.result)}</span></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Aún no hay actividad registrada.</td></tr>';
 }
 function clearSecret(){clearTimeout(state.secretTimer);const node=$('secret-value');if(node)node.textContent='La contraseña se ha ocultado.';const copy=$('copy-secret');if(copy)copy.disabled=true;}
-function closeModal(){clearSecret();$('modal').close();$('modal-body').replaceChildren();modalHandler=null;}
+function closeModal(){if(state.departmentSyncBusy){toast('Espera a que termine la sincronización de departamentos.');return;}clearSecret();$('modal').close();$('modal-body').replaceChildren();modalHandler=null;}
 function modal(title,html,submitLabel,handler){
  clearSecret();$('modal-title').textContent=title;$('modal-body').innerHTML=html;$('modal-error').textContent='';$('modal-submit').hidden=!handler;$('modal-submit').textContent=submitLabel||'Guardar';$('cancel-modal').textContent=handler?'Cancelar':'Cerrar';busy($('modal-submit'),false);modalHandler=handler;$('modal').showModal();
  const first=$('modal-body').querySelector('input');if(first)first.focus();
@@ -92,9 +92,29 @@ function showSecret(value,title='Contraseña generada'){
  $('copy-secret').onclick=async()=>{try{await navigator.clipboard.writeText($('secret-value').textContent);toast('Contraseña copiada.');}catch{$('modal-error').textContent='No fue posible copiar. Selecciona la contraseña y cópiala manualmente.';}};
  state.secretTimer=setTimeout(clearSecret,60000);
 }
-function createUser(){modal('Nuevo usuario',`<p>Se generará una contraseña con la política vigente.</p><label for="new-name">Nombre completo</label><input id="new-name" name="name" maxlength="120" autocomplete="off" required><label for="new-username">Nombre de usuario</label><input id="new-username" name="username" maxlength="20" pattern="[a-zA-Z0-9._-]{1,20}" autocomplete="off" required><p class="helper">Ejemplo: nombre.apellido</p><label for="new-department">Departamento</label><input id="new-department" name="department" maxlength="120" required><div class="notice">${state.mode==='local'?'Se creará una cuenta estándar en este servidor. No se conceden permisos de administrador ni acceso RDP automáticamente.':'La cuenta se creará en la OU autorizada. Debe cambiar la contraseña al iniciar sesión.'}</div>`,'Crear usuario',async data=>{
- const result=await api('users',data);await loadUsers();showSecret(result.password,'Contraseña inicial');toast('Usuario creado.');
+function createUser(){modal('Nuevo usuario',`<p>Se generará una contraseña con la política vigente.</p><label for="new-name">Nombre completo</label><input id="new-name" name="name" maxlength="120" autocomplete="off" required><label for="new-username">Nombre de usuario</label><input id="new-username" name="username" maxlength="20" pattern="[a-zA-Z0-9._-]{1,20}" autocomplete="off" required><p class="helper">Ejemplo: nombre.apellido</p><label for="new-department">Departamento</label><input id="new-department" name="department" maxlength="120" required><p class="helper">El departamento tendrá un grupo MKD propio y se asignará esta cuenta.</p><div class="notice">${state.mode==='local'?'Se creará una cuenta estándar en este servidor. No se conceden permisos de administrador ni acceso RDP automáticamente.':'La cuenta se creará en la OU autorizada. Debe cambiar la contraseña al iniciar sesión.'}</div>`,'Crear usuario',async data=>{
+ const result=await api('users',data);await loadUsers();showSecret(result.password,'Contraseña inicial');if(result.warning){const warning=document.createElement('p');warning.className='notice';warning.textContent=result.warning;$('modal-body').append(warning);}toast(result.warning?'Usuario creado; revisa la advertencia del grupo.':'Usuario creado y departamento asignado.');
  });}
+function editUser(user){
+ modal('Gestionar usuario',`<p>Cuenta: <strong>${esc(user.username)}</strong></p><label for="edit-name">Nombre completo</label><input id="edit-name" name="name" maxlength="120" value="${esc(user.name)}" required><label for="edit-department">Departamento</label><input id="edit-department" name="department" maxlength="120" value="${esc(user.department||'')}" required><p class="helper">Se asignará el grupo propio del nuevo departamento y se retirará el anterior administrado por Metakampo.</p><label for="edit-enabled">Estado de la cuenta</label><select id="edit-enabled" name="enabled"><option value="true" ${user.enabled?'selected':''}>Activo</option><option value="false" ${!user.enabled?'selected':''}>Inactivo</option></select><div class="notice">Inactivo deshabilita nuevos inicios de sesión. Las sesiones abiertas no se cierran automáticamente. Los grupos no conceden permisos adicionales por sí mismos.</div>`,'Guardar cambios',async data=>{
+  await api('users/'+user.id+'/update',{name:data.name,department:data.department,enabled:data.enabled==='true'});await loadUsers();closeModal();toast('Departamento y estado actualizados.');
+ });
+}
+$('sync-departments').onclick=()=>{
+ const users=state.users.filter(u=>!u.protected&&u.department&&u.department.trim());
+ const departments=[...new Set(users.map(u=>u.department))];
+ modal('Crear y sincronizar grupos de departamentos',`<p>Se revisarán <strong>${users.length} cuentas</strong> en <strong>${departments.length} departamentos</strong>.</p><p>${esc(departments.join(', ')||'No hay departamentos asignados.')}</p><div class="notice">Se crearán grupos propios con prefijo MKD y se asignarán las cuentas a su departamento. No se adoptarán grupos existentes ajenos a Metakampo. Las cuentas protegidas se excluyen.</div><p id="department-progress" role="status" aria-live="polite"></p>`,'Sincronizar grupos',async()=>{
+  let completed=0;state.departmentSyncBusy=true;
+  try{for(const user of users){
+   $('department-progress').textContent=`Procesando ${completed+1} de ${users.length}: ${user.username}`;
+   try{await api('users/'+user.id+'/department',{department:user.department});}
+   catch(err){throw new Error(`Completados: ${completed} de ${users.length}. Se detuvo en ${user.username}: ${err.message}. Los cambios completados se conservan; puedes reintentar.`);}
+   completed++;
+  }
+  }finally{state.departmentSyncBusy=false;}
+  await loadUsers();closeModal();toast(`${completed} cuentas sincronizadas con sus grupos.`);
+ });
+};
 function createVault(){modal('Nueva credencial','<p>Genera una clave y guárdala cifrada. Debes aplicarla al sistema correspondiente por separado.</p><label for="vault-title">Nombre de la credencial</label><input id="vault-title" name="title" maxlength="120" required placeholder="Ej. cuenta de servicio"><label for="vault-user">Usuario o cuenta</label><input id="vault-user" name="username" maxlength="120" required>','Generar y guardar',async data=>{const result=await api('vault',data);await loadVault();showSecret(result.password,'Credencial guardada');});}
 $('modal-form').onsubmit=async e=>{e.preventDefault();if(!modalHandler)return;const action=modalHandler;busy($('modal-submit'),true);$('modal-error').textContent='';try{await action(Object.fromEntries(new FormData(e.target)));}catch(err){$('modal-error').textContent='Error: '+err.message;}finally{busy($('modal-submit'),false);}};
 $('close-modal').onclick=closeModal;$('cancel-modal').onclick=closeModal;$('modal').addEventListener('cancel',e=>{e.preventDefault();closeModal();});
@@ -106,6 +126,7 @@ document.addEventListener('click',async e=>{
  const revoke=e.target.closest('[data-revoke-rdp]');if(revoke){modal('Revocar activación RDP','<p>El destinatario ya no podrá activar este paquete. Esta acción no elimina credenciales que ya estén guardadas en Windows.</p>','Revocar',async()=>{await api('rdp/clients/'+revoke.dataset.revokeRdp+'/revoke',{});closeModal();await loadRdp();toast('Activación revocada.');});return;}
  const newVault=e.target.closest('[data-new-vault]');if(newVault){createVault();return;}
  const reveal=e.target.closest('[data-reveal]');if(reveal){modal('Consultar '+reveal.dataset.title,'<p>Confirma tu identidad para acceder a esta credencial.</p><label for="confirm-password">Contraseña de administrador</label><input id="confirm-password" name="password" type="password" autocomplete="current-password" required>','Consultar',async data=>{const result=await api('vault/'+reveal.dataset.reveal+'/reveal',data);showSecret(result.password,'Credencial consultada');});return;}
+ const edit=e.target.closest('[data-edit-user]');if(edit){const user=state.users.find(u=>u.id===edit.dataset.editUser);if(user&&!user.protected)editUser(user);return;}
  const action=e.target.closest('[data-action]');if(action){const user=state.users.find(u=>u.id===action.dataset.id);if(!user)return;const type=action.dataset.action;const labels={reset:'Restablecer contraseña',disable:'Deshabilitar cuenta',enable:'Habilitar cuenta',unlock:'Desbloquear cuenta'};
  modal(labels[type],`<p>Cuenta: <strong>${esc(user.name)}</strong> (${esc(user.username)}).</p><p>${type==='reset'?(state.mode==='local'?'Se reemplazará la contraseña local vigente.':'Se reemplazará la contraseña actual y se solicitará un cambio al iniciar sesión.'):type==='disable'?'La cuenta perderá el acceso de inicio de sesión.':'Se actualizará el estado de la cuenta.'}</p>`,'Confirmar',async()=>{const result=await api('users/'+user.id+'/'+type,{});await loadUsers();if(result.password)showSecret(result.password,'Nueva contraseña de '+user.username);else{closeModal();toast('Cuenta actualizada.');}});
  }
@@ -213,3 +234,5 @@ function desktopLabels(){
  section.querySelector('.rdp-history p').textContent='Elimina la credencial en el Administrador de credenciales de Windows para retirar su almacenamiento local.';
  section.querySelector('th:nth-child(3)').textContent='Fecha de preparación';
 }
+
+$('modal').addEventListener('cancel',e=>{if(state.departmentSyncBusy)e.preventDefault();});

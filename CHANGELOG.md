@@ -1,5 +1,12 @@
 # Cambios
 
+## 2026-10-16 — 1.4.0 Departamentos como grupos y elevación automática
+
+- Grupos de departamento propios en SAM y AD; pertenencia idempotente y cambio de departamento sin adoptar grupos ajenos.
+- Gestión de nombre/departamento/estado activo-inactivo desde el directorio y sincronización explícita de cuentas existentes con progreso y errores parciales.
+- Contraseña conservada si el alta de cuenta tiene un fallo posterior de asignación al grupo.
+- Manifiesto requireAdministrator para abrir con doble clic y confirmación UAC automática; identidad Windows/DPAPI conservadas.
+
 ## 2026-10-12 — Dashboard de uso y eventos Windows
 
 - Dashboard inicial: accesos, fallos, usuarios y servidores, gráfica diaria y filtros de 7/30/90 días.

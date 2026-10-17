@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.3.2'
+VERSION = '1.4.0'
 
 
 def validate_settings(data):
@@ -240,6 +240,7 @@ def main():
                              'access-map.js','access-map.css','maps/world.svg'):
                 assert (BASE / 'static' / filename).exists(), filename
             assert (BASE / 'windows' / 'Read-LocalLogons.ps1').exists()
+            assert (BASE / 'windows' / 'department-groups.ps1').exists()
             from access_map import Locator
             locator=Locator(BASE / 'geodata' / 'city.mmdb')
             try:

@@ -273,6 +273,8 @@ def register(app,db,audit,throttled,fresh_password,native_directory=None):
                                 stamp=item['target_stamp'] if item['target_id'] and not item['reset'] and item['target_stamp'] else str(uuid.uuid4())
                             remember(db(),key,identifier,item['username'],password,domain,stamp)
                             db().execute('INSERT OR IGNORE INTO issued(fingerprint) VALUES(?)',(fingerprint(key,password),));db().commit()
+                        if native and native.get('warning'):
+                            raise DirectoryError('La cuenta existe pero su grupo de departamento requiere revisión.')
                         result=dict(username=item['username'],result='aplicado',action=item['action'])
                         audit('sincronizar usuario',item['username'])
                     except Exception:

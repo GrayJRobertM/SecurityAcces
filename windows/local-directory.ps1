@@ -52,6 +52,7 @@ try {
         return @{id=$user.SID.Value;username=$user.Name;domain_guid=$scope;stamp=(Stamp $user)}
     }
     function UserObject($user) { return [ADSI]("WinNT://"+$env:COMPUTERNAME+'/'+$user.Name+',user') }
+    . ([IO.Path]::Combine($PSScriptRoot,'department-groups.ps1'))
     $stage='dispatch'
     switch ($request.action) {
         'check' { $data=@{local=$true;computer=$env:COMPUTERNAME;scope=$scope} }
@@ -80,6 +81,7 @@ try {
             if ([string]$request.username -notmatch '^[a-zA-Z0-9._-]{1,20}$' -or [string]$request.username -match '\.$' -or [string]$request.username -in '.','..') {throw 'Invalid username'}
             $secure=SecurePassword $request.password
             $enabled=if ($request.PSObject.Properties.Name -contains 'enabled') {[bool]$request.enabled} else {$true}
+            $null=Department-Group ([string]$request.department)
             $stage='create'
             $user=New-LocalUser -Name $request.username -FullName $request.name -Description ([string]$request.department) -Password $secure -Disabled:(-not $enabled) -ErrorAction Stop
             # Standard Users membership only; RDP rights remain controlled by Windows policy.
@@ -87,8 +89,9 @@ try {
             Add-LocalGroupMember -SID ([Security.Principal.SecurityIdentifier]'S-1-5-32-545') -Member $user -ErrorAction Stop
             $stage='password-stamp'
             $data=PasswordResult $user
+            try {$data.department_group=Set-DepartmentMembership $user '' ([string]$request.department)} catch {$data.warning='La cuenta se creó, pero no se pudo asignar el grupo del departamento. Conserva la contraseña y vuelve a guardar el departamento.'}
         }
-        {$_ -in 'reset','enable','disable','unlock','update'} {
+        {$_ -in 'reset','enable','disable','unlock','update','department'} {
             $user=Scoped $request.identifier
             $stage='modify'
             switch ($request.action) {
@@ -96,7 +99,12 @@ try {
                 'enable' {Enable-LocalUser -SID $user.SID -ErrorAction Stop}
                 'disable' {Disable-LocalUser -SID $user.SID -ErrorAction Stop}
                 'unlock' {$entry=UserObject $user;$entry.InvokeSet('IsAccountLocked',$false);$entry.CommitChanges()}
+                'department' {
+                    $group=Set-DepartmentMembership $user ([string]$user.Description) ([string]$request.department)
+                    Set-LocalUser -SID $user.SID -Description ([string]$request.department) -ErrorAction Stop
+                }
                 'update' {
+                    $group=Set-DepartmentMembership $user ([string]$user.Description) ([string]$request.department)
                     Set-LocalUser -SID $user.SID -FullName $request.name -Description ([string]$request.department) -ErrorAction Stop
                     if ($request.enabled) {Enable-LocalUser -SID $user.SID} else {Disable-LocalUser -SID $user.SID}
                 }

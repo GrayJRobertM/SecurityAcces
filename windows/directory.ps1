@@ -26,10 +26,11 @@ try {
         try {$domainGuid=(Get-ADDomain @common).ObjectGUID.ToString()} catch {}
         return @{id=$user.ObjectGUID.ToString();username=$user.SamAccountName;domain_guid=$domainGuid;stamp=(Read-PasswordStamp $user)}
     }
+    . ([IO.Path]::Combine($PSScriptRoot,'department-groups.ps1'))
     switch ($request.action) {
         'list' {
-            $items = @(Get-ADUser -Filter * -SearchBase $base.DistinguishedName -SearchScope Subtree -Properties DisplayName,Department,Enabled,LockedOut @common | ForEach-Object {
-                @{ id=$_.ObjectGUID.ToString(); name=$(if ($_.DisplayName) {$_.DisplayName} else {$_.Name}); username=$_.SamAccountName; department=$_.Department; upn=$_.UserPrincipalName; enabled=$_.Enabled; locked=$_.LockedOut }
+            $items = @(Get-ADUser -Filter * -SearchBase $base.DistinguishedName -SearchScope Subtree -Properties DisplayName,Department,Enabled,LockedOut,adminCount @common | ForEach-Object {
+                @{ id=$_.ObjectGUID.ToString(); name=$(if ($_.DisplayName) {$_.DisplayName} else {$_.Name}); username=$_.SamAccountName; department=$_.Department; upn=$_.UserPrincipalName; enabled=$_.Enabled; locked=$_.LockedOut; protected=($_.adminCount -eq 1) }
             })
             $data = $items
         }
@@ -39,8 +40,10 @@ try {
             $enabled=if ($request.PSObject.Properties.Name -contains 'enabled') {[bool]$request.enabled} else {$true}
             $attributes=@{Name=$request.name;DisplayName=$request.name;SamAccountName=$request.username;UserPrincipalName="$($request.username)@$($request.upnSuffix)";Path=$base.DistinguishedName;AccountPassword=$secure;ChangePasswordAtLogon=$true;Enabled=$enabled;PassThru=$true}
             if ($request.department) {$attributes.Department=$request.department}
+            $null=Department-Group ([string]$request.department)
             $user=New-ADUser @attributes @common
             $data=Password-Result $user
+            try {$data.department_group=Set-DepartmentMembership $user '' ([string]$request.department)} catch {$data.warning='La cuenta se creó, pero no se pudo asignar el grupo del departamento. Conserva la contraseña y vuelve a guardar el departamento.'}
         }
         'stamps' {
             $domain=Get-ADDomain @common
@@ -51,8 +54,8 @@ try {
             }
             $data=@{domain_guid=$domain.ObjectGUID.ToString();users=@($items)}
         }
-        { $_ -in 'reset','enable','disable','unlock','update' } {
-            $user = Get-ADUser -Identity ([Guid]$request.identifier) -Properties adminCount @common
+        { $_ -in 'reset','enable','disable','unlock','update','department' } {
+            $user = Get-ADUser -Identity ([Guid]$request.identifier) -Properties adminCount,Department @common
             # Resolve GUID first, then restrict actions to the configured OU subtree.
             if (-not $user.DistinguishedName.EndsWith(','+$base.DistinguishedName,[StringComparison]::OrdinalIgnoreCase) -or $user.adminCount -eq 1) { throw 'Outside delegated scope' }
             switch ($request.action) {
@@ -64,7 +67,12 @@ try {
                 'enable' { Enable-ADAccount -Identity $user @common }
                 'disable' { Disable-ADAccount -Identity $user @common }
                 'unlock' { Unlock-ADAccount -Identity $user @common }
+                'department' {
+                    $group=Set-DepartmentMembership $user ([string]$user.Department) ([string]$request.department)
+                    Set-ADUser -Identity $user -Department $request.department @common
+                }
                 'update' {
+                    $group=Set-DepartmentMembership $user ([string]$user.Department) ([string]$request.department)
                     Set-ADUser -Identity $user -DisplayName $request.name @common
                     if ($request.department) {Set-ADUser -Identity $user -Department $request.department @common}
                     else {Set-ADUser -Identity $user -Clear Department @common}

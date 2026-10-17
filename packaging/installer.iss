@@ -1,4 +1,4 @@
-#define AppVersion "1.3.2"
+#define AppVersion "1.4.0"
 [Setup]
 AppId={{72FBC267-2574-4268-AB77-36B8374BCA7D}
 AppName=Metakampo Access
@@ -44,7 +44,7 @@ Type: files; Name: "{commondesktop}\Freshkampo Access.lnk"
 
 [Run]
 Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando el motor de escritorio Microsoft WebView2..."; Flags: waituntilterminated
-Filename: "{app}\MetakampoAccess.exe"; Description: "Abrir Metakampo Access"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\MetakampoAccess.exe"; Description: "Abrir Metakampo Access"; Flags: shellexec nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
 function IsServerCore(): Boolean;

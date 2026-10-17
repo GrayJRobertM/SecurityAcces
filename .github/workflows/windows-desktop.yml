@@ -38,6 +38,8 @@ jobs:
       - name: Verify frozen executable
         shell: powershell
         run: |
+          python packaging/verify-manifest.py
+          if ($LASTEXITCODE -ne 0) { throw 'Elevation manifest verification failed' }
           $process=Start-Process dist\MetakampoAccess\MetakampoAccess.exe -ArgumentList '--self-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw 'Frozen executable self-test failed' }
       - name: Download official offline desktop runtime
