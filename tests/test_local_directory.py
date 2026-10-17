@@ -87,7 +87,10 @@ class LocalModeTests(unittest.TestCase):
         self.native_mock.assert_called_with('update',identifier=self.identifier,name='Updated',department='Finance',enabled=False)
         self.assertEqual(self.post('users/'+self.identifier+'/department',dict(department='IT')).status_code,200)
         self.native_mock.assert_called_with('department',identifier=self.identifier,department='IT')
-        self.assertEqual(self.post('users/'+self.identifier+'/department',dict(department='')).status_code,400)
+        self.assertEqual(self.post('users/'+self.identifier+'/department',dict(department='')).status_code,200)
+        self.native_mock.assert_called_with('department',identifier=self.identifier,department='')
+        for invalid in (None,123,'bad\nvalue'):
+            self.assertEqual(self.post('users/'+self.identifier+'/department',dict(department=invalid)).status_code,400)
 
     def test_partial_create_keeps_password_and_exposes_group_warning(self):
         def partial(action,**kwargs):
@@ -224,6 +227,9 @@ class NativeLocalTests(unittest.TestCase):
             self.assertEqual(current()['department'],department)
             # Membership is authoritative even when Description looks like a department.
             command("$g=Get-LocalGroup | Where-Object Description -eq ('Metakampo Department v1: '+$request.department);Remove-LocalGroupMember -SID $g.SID -Member (Get-LocalUser -SID ([Security.Principal.SecurityIdentifier]$request.sid))",sid=identifier,department=department)
+            self.assertEqual(current()['department'],'');self.assertEqual(current()['description'],'Another Windows description')
+            call_local('department',identifier=identifier,department=department)
+            call_local('update',identifier=identifier,name='No department',department='',enabled=True)
             self.assertEqual(current()['department'],'');self.assertEqual(current()['description'],'Another Windows description')
         finally:
             if identifier:

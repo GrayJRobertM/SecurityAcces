@@ -111,9 +111,9 @@ def create_app(overrides=None):
                 db().rollback()
         raise ValueError('No se pudo generar una clave única.')
 
-    def text_field(data, field, maximum=120):
+    def text_field(data, field, maximum=120, allow_empty=False):
         value = data.get(field, '')
-        if not isinstance(value, str) or not value.strip() or len(value) > maximum or any(ord(c)<32 for c in value):
+        if not isinstance(value, str) or (not allow_empty and not value.strip()) or len(value) > maximum or any(ord(c)<32 for c in value):
             raise ValueError('Completa correctamente el campo '+field+'.')
         return value.strip()
 
@@ -260,7 +260,7 @@ def create_app(overrides=None):
         changes={}
         if action in ('update','department'):
             data=request.get_json() or {}
-            changes['department']=text_field(data,'department')
+            changes['department']=text_field(data,'department',allow_empty=True)
             if action=='update':
                 changes['name']=text_field(data,'name')
                 if type(data.get('enabled')) is not bool:raise ValueError('El estado debe ser activo o inactivo.')
