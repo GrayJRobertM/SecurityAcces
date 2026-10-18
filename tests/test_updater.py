@@ -110,7 +110,7 @@ class NativeUpdateTests(unittest.TestCase):
   from directory import local_powershell_path
   with tempfile.TemporaryDirectory(prefix='mk-update-test-') as folder:
    root=Path(folder);stage=u.secure_stage(root)
-   command="(Get-Acl -LiteralPath '"+str(stage)+"').Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }"
+   command="([IO.Directory]::GetAccessControl('"+str(stage)+"')).Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }"
    acl=subprocess.check_output([local_powershell_path(),'-NoProfile','-NonInteractive','-Command',command],text=True)
    self.assertEqual(set(acl.split()),{'S-1-5-18','S-1-5-32-544'})
    (stage/'plan.json').write_text(json.dumps(dict(schema=1,version='1.9.0',owner_pid=os.getpid(),interactive=False)))
