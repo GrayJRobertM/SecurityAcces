@@ -1,5 +1,6 @@
 # Runs under the delegated Windows service identity; passwords arrive only on stdin.
 $ErrorActionPreference = 'Stop'
+$env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')+';'+$env:PSModulePath
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 try {

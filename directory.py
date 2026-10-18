@@ -20,7 +20,7 @@ def call_ad(action, _configuration=None, **values):
     data = dict(action=action, server=server, ou=ou, upnSuffix=configuration.get('suffix',''), **values)
     script = Path(__file__).parent / 'windows' / 'directory.ps1'
     try:
-        result = subprocess.run(['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script)],
+        result = subprocess.run([local_powershell_path(), '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script)],
                                 input=json.dumps(data), capture_output=True, text=True, encoding='utf-8', timeout=45,
                                 creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         response = json.loads(result.stdout.lstrip('\ufeff'))

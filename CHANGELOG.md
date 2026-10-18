@@ -4,6 +4,7 @@
 
 - Admite bases CN=Users y OU sin mover cuentas; valida el tipo de objeto en Windows.
 - Conserva límites de subárbol, protección de cuentas y grupos de departamento propios.
+- AD usa Windows PowerShell de 64 bits y prioriza sus módulos oficiales para evitar conflictos con PowerShell 7.
 - Distingue errores de controlador DNS y sufijo UPN en configuración.
 
 ## 2026-10-17 — 1.5.0 Administración compartida en sesiones RDP
