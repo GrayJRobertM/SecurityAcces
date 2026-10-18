@@ -134,6 +134,35 @@ class ModeSwitchTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name=='nt' and os.environ.get('FK_NATIVE_LOCAL_TESTS')=='1','Native SAM tests run only in explicitly enabled Windows CI')
 class NativeLocalTests(unittest.TestCase):
+    def test_native_account_expiry_disable_clear_and_protection(self):
+        import subprocess,json
+        from datetime import datetime,timezone
+        username='mkex'+uuid.uuid4().hex[:12];identifier=None
+        try:
+            created=call_local('create',username=username,name='Expiry CI',department='',password=generate_password(24));identifier=created['id']
+            self.assertIsNone(call_local('expiry-info',identifier=identifier)['expires_at'])
+            future=int(time.time())+3600
+            iso=datetime.fromtimestamp(future,timezone.utc).isoformat()
+            result=call_local('expiry-set',identifier=identifier,expires_at=iso)
+            self.assertEqual(result['expires_at'],future);self.assertTrue(result['enabled'])
+            with self.assertRaises(DirectoryError):call_local('expiry-disable',identifier=identifier,expected_at=future)
+            self.assertTrue(call_local('expiry-info',identifier=identifier)['enabled'])
+            past=int(time.time())-3600
+            call_local('expiry-set',identifier=identifier,expires_at=datetime.fromtimestamp(past,timezone.utc).isoformat())
+            self.assertTrue(call_local('expiry-disable',identifier=identifier,expected_at=past+1)['conflict'])
+            result=call_local('expiry-disable',identifier=identifier,expected_at=past)
+            self.assertFalse(result['enabled']);self.assertTrue(result['changed'])
+            self.assertFalse(call_local('expiry-disable',identifier=identifier,expected_at=past)['changed'])
+            cleared=call_local('expiry-set',identifier=identifier,expires_at=None)
+            self.assertIsNone(cleared['expires_at']);self.assertFalse(cleared['enabled'])
+            protected=next(u for u in call_local('list') if u['protected'])
+            with self.assertRaises(DirectoryError):call_local('expiry-set',identifier=protected['id'],expires_at=iso)
+        finally:
+            if identifier:
+                command="$p=[Console]::In.ReadToEnd()|ConvertFrom-Json;Remove-LocalUser -SID ([Security.Principal.SecurityIdentifier]$p.sid) -ErrorAction Stop"
+                result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],input=json.dumps(dict(sid=identifier)),text=True,capture_output=True)
+                self.assertEqual(result.returncode,0,'Expiry CI cleanup failed')
+
     def test_create_reset_disable_stamp_and_admin_protection_on_windows(self):
         import subprocess,json
         username='mkci'+uuid.uuid4().hex[:12];identifier=None

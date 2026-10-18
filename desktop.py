@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.6.0'
+VERSION = '1.7.0'
 
 
 def validate_settings(data):
@@ -292,6 +292,8 @@ def main():
         if app.config['MODE'] in ('ad','local'):
             collectors.append(app.ip_protection)
             app.ip_protection.start()
+            collectors.append(app.account_expiry)
+            app.account_expiry.start()
         if app.config['MODE'] in ('ad','local'):
             collector = LocalCollector(app.db_path, folder)
             collectors.append(collector)

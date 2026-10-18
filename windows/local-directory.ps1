@@ -51,6 +51,11 @@ try {
         $user=Get-LocalUser -SID $user.SID
         return @{id=$user.SID.Value;username=$user.Name;domain_guid=$scope;stamp=(Stamp $user)}
     }
+    function Expiry-Result($user) {
+        $expires=$null
+        if($user.AccountExpires){$expires=[DateTimeOffset]::new($user.AccountExpires.ToUniversalTime()).ToUnixTimeSeconds()}
+        return @{id=$user.SID.Value;username=$user.Name;enabled=[bool]$user.Enabled;expires_at=$expires}
+    }
     function UserObject($user) { return [ADSI]("WinNT://"+$env:COMPUTERNAME+'/'+$user.Name+',user') }
     . ([IO.Path]::Combine($PSScriptRoot,'department-groups.ps1'))
     $localDepartments=@{};$departmentsVerified=$true
@@ -68,7 +73,7 @@ try {
                 # No WMI or per-user ADSI calls in the inventory path.
                 $localUser=$_
                 $departments=@($localDepartments[$localUser.SID.Value] | Where-Object {$_} | ForEach-Object {$_.department})
-                @{id=$localUser.SID.Value;name=$(if ($localUser.FullName) {$localUser.FullName} else {$localUser.Name});username=$localUser.Name;department=$(if ($departments.Count -eq 1) {$departments[0]} else {''});description=[string]$localUser.Description;department_conflict=($departments.Count -gt 1);department_options=@($departments);upn=($env:COMPUTERNAME+'\'+$localUser.Name);enabled=$localUser.Enabled;locked=$false;lock_state_known=$false;protected=(Protected $localUser)}
+                @{id=$localUser.SID.Value;name=$(if ($localUser.FullName) {$localUser.FullName} else {$localUser.Name});username=$localUser.Name;department=$(if ($departments.Count -eq 1) {$departments[0]} else {''});description=[string]$localUser.Description;department_conflict=($departments.Count -gt 1);department_options=@($departments);upn=($env:COMPUTERNAME+'\'+$localUser.Name);enabled=$localUser.Enabled;locked=$false;lock_state_known=$false;protected=(Protected $localUser);windows_expires_at=$(if($localUser.AccountExpires){[DateTimeOffset]::new($localUser.AccountExpires.ToUniversalTime()).ToUnixTimeSeconds()}else{$null})}
             })
             if ($request.action -eq 'inventory') {
                 $warnings=@()
@@ -77,6 +82,28 @@ try {
                 if (-not $departmentsVerified) {$warnings+='No se pudieron verificar los grupos de departamento. Los departamentos no se infieren de la descripcion; cuentas en solo lectura.'}
                 $data=@{users=@($items);source='windows-local';computer=$env:COMPUTERNAME;read_only=(-not $elevated -or -not $adminsVerified -or -not $departmentsVerified);warnings=@($warnings)}
             } else {$data=@($items)}
+        }
+        {$_ -in 'expiry-info','expiry-set','expiry-disable'} {
+            $user=Scoped $request.identifier
+            if($request.action -eq 'expiry-set') {
+                if($null -eq $request.expires_at) {Set-LocalUser -SID $user.SID -AccountNeverExpires -ErrorAction Stop}
+                else {
+                    $deadline=[DateTimeOffset]::Parse([string]$request.expires_at,[Globalization.CultureInfo]::InvariantCulture)
+                    Set-LocalUser -SID $user.SID -AccountExpires $deadline.UtcDateTime -ErrorAction Stop
+                }
+                $user=Get-LocalUser -SID $user.SID -ErrorAction Stop
+            }
+            $data=Expiry-Result $user
+            if($request.action -eq 'expiry-disable') {
+                if($null -eq $data.expires_at -or $data.expires_at -ne [long]$request.expected_at) {$data.conflict=$true}
+                else {
+                    if([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() -lt $data.expires_at){throw 'Deadline not reached'}
+                    $changed=[bool]$user.Enabled
+                    if($changed){Disable-LocalUser -SID $user.SID -ErrorAction Stop}
+                    $data=Expiry-Result (Get-LocalUser -SID $user.SID -ErrorAction Stop)
+                    $data.changed=$changed
+                }
+            }
         }
         'stamps' {
             $items=@()

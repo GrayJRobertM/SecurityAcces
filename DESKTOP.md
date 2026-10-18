@@ -1,6 +1,6 @@
 # Metakampo Access · Aplicación Windows Server
 
-Versión 1.5.0, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
+Versión 1.7.0, x64. Instalador: **Metakampo-Access-Setup-x64.exe**. Aplicación instalada: **MetakampoAccess.exe**.
 
 ## Administradores desde sus sesiones RDP del mismo servidor
 
@@ -144,3 +144,20 @@ Si el nombre ya existe, se muestra un mensaje de cuenta duplicada y no se reempl
 Las versiones anteriores usaban Description como departamento local. Desde 1.4.1 no se interpreta ni se modifica ese campo. Los grupos ya creados y sus miembros se conservan y permiten reconocer departamentos asignados por 1.4.0. Si antes se generaron grupos a partir de descripciones incorrectas, revisa cada cuenta en Gestionar y asigna el departamento correcto: se retirará su pertenencia a otros grupos propios de departamento, sin eliminar los grupos ni cambiar la descripción. No puede restaurarse automáticamente una descripción original que una versión anterior hubiera sobrescrito, porque no se almacenó una copia. No se infiere ni inventa ese texto.
 
 En AD se sigue usando el atributo Department real. Exportación y sincronización de cuentas locales usan la misma lectura por grupos; las descripciones no se exportan como departamentos. Si falla la lectura de grupos, el inventario conserva las cuentas en solo lectura con un aviso y no infiere departamentos.
+
+## Menú y vencimiento de cuentas (1.7.0)
+
+El botón junto a la ruta superior permite contraer/expandir el menú. En escritorio conserva iconos con nombres accesibles; en pantalla estrecha oculta/muestra la navegación. Recuerda la preferencia local de la ventana/perfil.
+
+En **Directorio de usuarios**, pulsa el **reloj — Configurar vencimiento** de una cuenta editable. Elige fecha y hora futuras en la zona indicada de esa sesión, y confirma tu contraseña del gestor. Puedes dejar la fecha vacía para quitar el vencimiento. Esta función aplica a cuentas Windows locales o de AD, no a las cuentas Administradores del gestor. Las cuentas protegidas conservan sus restricciones. Puedes usarla en cuentas existentes o después de crear una nueva.
+
+- Se establece y verifica el vencimiento nativo (Set-LocalUser AccountExpires / AccountNeverExpires, o Set/Clear-ADAccountExpiration). Windows controla nuevos inicios de sesión al vencer aunque Metakampo no esté abierto. No se cambia el vencimiento de la contraseña; es el vencimiento de la cuenta. Sesiones abiertas y tickets existentes no se terminan ni revocan automáticamente.
+- El propietario revisa vencimientos cada 30 segundos mientras está abierto. Revalida por SID/GUID, ámbito y protecciones; solo deshabilita si la fecha nativa aún coincide y ya venció. Confirma Enabled=False antes de registrar éxito o generar alerta. Si otro administrador modifica externamente la fecha, marca conflicto y exige revisión, sin sobrescribirla durante la deshabilitación.
+- La intención de programación persiste antes de escribir Windows. Si falla la confirmación, queda pendiente y se reintenta comparando el valor anterior/solicitado para no sobreescribir cambios externos. Errores, acciones, confirmaciones y entregas se muestran en **Vencimientos y alertas** y Registro de actividad. Las tablas muestran programación y estado de Telegram.
+- Al confirmar deshabilitación, envía **USUARIO DESHABILITADO** al monitor Telegram existente de 1.6.0: usuario, servidor, fecha de vencimiento, fecha de comprobación UTC y referencia. Si la cuenta ya estaba deshabilitada lo indica sin atribuirse el cambio. No envía alerta de éxito al fallar Windows. Los envíos pendientes sobreviven al reinicio y reintentan (30 s a 1 h); confirmaciones perdidas pueden duplicar un mensaje con la misma referencia. No requiere activar las alertas de IP, no usa getUpdates ni incluye secretos en el instalador.
+- Si el propietario está cerrado, Windows conserva su vencimiento nativo; **Enabled=False y Telegram se procesan al reabrir**. No se incorpora servicio/tarea nueva. El usuario debe mantener abierto el propietario para la deshabilitación y notificación oportunas. No se promete un aviso instantáneo ni cobertura durante caída del servidor/red.
+- Ampliar o quitar vencimiento no reactiva una cuenta deshabilitada. Después puedes activarla desde Gestionar. Con vencimiento gestionado ya cumplido, el gestor rechaza activarla (también en importaciones); primero amplía/retira la fecha. La importación de usuarios no transfiere estas programaciones ni sustituye las fechas nativas. Programaciones por entorno de datos Local/AD, no sincronizadas entre instalaciones. Solo se procesa el entorno abierto; si cambias de modo, otros entornos se revisan al volver. El vencimiento nativo persiste independientemente.
+
+Instala 1.7.0 con la cuenta propietaria original y conserva configuración/datos. Para probar, utiliza una cuenta estándar de prueba, elige un vencimiento cercano, mantén abierto el propietario y comprueba estado Inactivo, auditoría y entrega Telegram. La integración real con AD/certificados y el monitor del usuario requiere piloto; CI Windows usa cuentas temporales propias y no contacta Telegram.
+
+Fuentes: [Set-LocalUser](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.localaccounts/set-localuser), [Set-ADAccountExpiration](https://learn.microsoft.com/en-us/powershell/module/activedirectory/set-adaccountexpiration).

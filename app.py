@@ -26,6 +26,7 @@ from rdp import RDPError, make_package, validate_connection, portal_url, configu
 from telemetry import install as install_telemetry, register as register_telemetry
 from access_map import register as register_access_map
 from ip_protection import IPProtection, register as register_ip_protection
+from account_expiry import AccountExpiry, register as register_account_expiry
 from user_sync import install as install_user_sync, register as register_user_sync, remember as remember_user_password
 
 from authentication import install as install_auth, register as register_operators, account_hash, reauthenticate, current_actor
@@ -229,14 +230,18 @@ def create_app(overrides=None):
         return jsonify(ok=True)
 
     def native_directory(action,**values):
+        if action=='enable' or (action=='update' and values.get('enabled') is True):
+            app.account_expiry.ensure_enable(values.get('identifier'))
         return (call_local if app.config['MODE']=='local' else call_ad)(action,**values)
 
     @app.get('/api/users')
     def users():
         if app.config['MODE']=='local':
-            return jsonify(call_local('inventory'))
+            inventory=call_local('inventory')
+            inventory['users']=app.account_expiry.annotate(inventory.get('users') or [])
+            return jsonify(inventory)
         values = native_directory('list') if app.config['MODE']!='demo' else [dict(r) for r in db().execute('SELECT * FROM users ORDER BY name')]
-        return jsonify(users=values or [])
+        return jsonify(users=app.account_expiry.annotate(values or []))
 
     @app.post('/api/users')
     def add_user():
@@ -276,6 +281,8 @@ def create_app(overrides=None):
                 changes['name']=text_field(data,'name')
                 if type(data.get('enabled')) is not bool:raise ValueError('El estado debe ser activo o inactivo.')
                 changes['enabled']=data['enabled']
+        if app.config['MODE']=='demo' and (action=='enable' or (action=='update' and changes.get('enabled') is True)):
+            app.account_expiry.ensure_enable(identifier)
         password = fresh_password() if action=='reset' else None
         if app.config['MODE']!='demo':
             result=native_directory(action, identifier=identifier, **changes, **({'password':password} if password else {}))
@@ -474,6 +481,12 @@ def create_app(overrides=None):
     guard = IPProtection(guard_folder / ("ip-protection-demo.sqlite3" if app.config["MODE"]=="demo" else "ip-protection.sqlite3"), database, key, demo=app.config["MODE"]=="demo")
     register_ip_protection(app,guard,db,audit,throttled)
     app.ip_protection = guard
+    expiry_scope=dict(server=os.environ.get('FK_AD_SERVER'),ou=os.environ.get('FK_AD_OU'),suffix=os.environ.get('FK_AD_UPN_SUFFIX',''))
+    def expiry_directory(action,**values):
+        return call_local(action,**values) if app.config['MODE']=='local' else call_ad(action,_configuration=expiry_scope,**values)
+    expiry = AccountExpiry(database,expiry_directory,guard.backend,demo=app.config["MODE"]=="demo")
+    app.account_expiry = expiry
+    register_account_expiry(app,expiry,db,throttled)
     app.db_path = database
     return app
 

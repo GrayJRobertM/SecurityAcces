@@ -1,6 +1,6 @@
 # Metakampo Access · Escritorio Windows Server
 
-La versión 1.3.0 administra usuarios locales Windows o Active Directory según el modo elegido. La versión actual se instala como **Metakampo-Access-Setup-x64.exe** y se abre desde una ventana propia. No necesita Python ni IIS. Consulta [DESKTOP.md](DESKTOP.md) para instalar, configurar AD y utilizar las métricas locales y los clientes RDP protegidos con DPAPI. El portal anterior se conserva en la rama `main`; esta versión está en `codex/windows-desktop`.
+La versión 1.7.0 administra usuarios locales Windows o Active Directory según el modo elegido. La versión actual se instala como **Metakampo-Access-Setup-x64.exe** y se abre desde una ventana propia. No necesita Python ni IIS. Consulta [DESKTOP.md](DESKTOP.md) para instalar, configurar AD y utilizar las métricas locales y los clientes RDP protegidos con DPAPI. El portal anterior se conserva en la rama `main`; esta versión está en `codex/metakampo-desktop`.
 
 Las secciones siguientes documentan el portal original y su ejecución de desarrollo; la aplicación de escritorio utiliza el asistente y no un portal HTTPS.
 
@@ -124,3 +124,7 @@ El proceso propietario debe estar abierto para detectar fallos, reintentar Teleg
 Instala con el propietario original. Añade primero las IP de administración/VPN a la lista blanca, comprueba el monitor sin enviar, habilita política/alertas y realiza un piloto desde una IP de prueba fuera de la lista blanca, conservando acceso de recuperación. No se enviaron mensajes reales ni se modificó el firewall del servidor del usuario durante el desarrollo.
 
 Referencias: [New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule), [Telegram sendMessage](https://core.telegram.org/bots/api#sendmessage).
+
+## Menú y vencimientos (1.7.0)
+
+Menú lateral colapsable y vencimiento de cuentas Windows/AD con deshabilitación confirmada y alerta Telegram. Consulta la sección 1.7.0 de [DESKTOP.md](DESKTOP.md) para fechas, zona horaria, disponibilidad, reintentos y restricciones.

@@ -258,6 +258,7 @@ def register(app,db,audit,throttled,fresh_password,native_directory=None):
                                 identifier=str(uuid.uuid4());db().execute('INSERT INTO users VALUES(?,?,?,?,?)',(identifier,item['name'],item['username'],item['department'],int(item['enabled'])));db().commit()
                         else:
                             if item['metadata']:
+                                if app.config['MODE']=='demo' and item['enabled']:app.account_expiry.ensure_enable(identifier)
                                 if app.config['MODE']!='demo':native_directory('update',identifier=identifier,name=item['name'],department=item['department'],enabled=item['enabled'])
                                 else:db().execute('UPDATE users SET name=?,department=?,enabled=? WHERE id=?',(item['name'],item['department'],int(item['enabled']),identifier));db().commit()
                             if item['reset'] and app.config['MODE']!='demo':native=native_directory('reset',identifier=identifier,password=password)

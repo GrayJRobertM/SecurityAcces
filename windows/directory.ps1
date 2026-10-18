@@ -10,9 +10,14 @@ try {
     $base = Get-ADOrganizationalUnit -Identity $ou -Server $server
     $common = @{ Server = $server; ErrorAction = 'Stop' }
     function Get-ScopedUser($identifier) {
-        $found=Get-ADUser -Identity ([Guid]$identifier) -Properties adminCount @common
+        $found=Get-ADUser -Identity ([Guid]$identifier) -Properties adminCount,AccountExpirationDate @common
         if (-not $found.DistinguishedName.EndsWith(','+$base.DistinguishedName,[StringComparison]::OrdinalIgnoreCase) -or $found.adminCount -eq 1) { throw 'Outside delegated scope' }
         return $found
+    }
+    function Expiry-Result($user) {
+        $expires=$null
+        if($user.AccountExpirationDate){$expires=[DateTimeOffset]::new($user.AccountExpirationDate.ToUniversalTime()).ToUnixTimeSeconds()}
+        return @{id=$user.ObjectGUID.ToString();username=$user.SamAccountName;enabled=[bool]$user.Enabled;expires_at=$expires}
     }
     function Read-PasswordStamp($user) {
         try {
@@ -29,8 +34,8 @@ try {
     . ([IO.Path]::Combine($PSScriptRoot,'department-groups.ps1'))
     switch ($request.action) {
         'list' {
-            $items = @(Get-ADUser -Filter * -SearchBase $base.DistinguishedName -SearchScope Subtree -Properties DisplayName,Department,Enabled,LockedOut,adminCount @common | ForEach-Object {
-                @{ id=$_.ObjectGUID.ToString(); name=$(if ($_.DisplayName) {$_.DisplayName} else {$_.Name}); username=$_.SamAccountName; department=$_.Department; upn=$_.UserPrincipalName; enabled=$_.Enabled; locked=$_.LockedOut; protected=($_.adminCount -eq 1) }
+            $items = @(Get-ADUser -Filter * -SearchBase $base.DistinguishedName -SearchScope Subtree -Properties DisplayName,Department,Enabled,LockedOut,adminCount,AccountExpirationDate @common | ForEach-Object {
+                @{ id=$_.ObjectGUID.ToString(); name=$(if ($_.DisplayName) {$_.DisplayName} else {$_.Name}); username=$_.SamAccountName; department=$_.Department; upn=$_.UserPrincipalName; enabled=$_.Enabled; locked=$_.LockedOut; protected=($_.adminCount -eq 1);windows_expires_at=$(if($_.AccountExpirationDate){[DateTimeOffset]::new($_.AccountExpirationDate.ToUniversalTime()).ToUnixTimeSeconds()}else{$null}) }
             })
             $data = $items
         }
@@ -44,6 +49,28 @@ try {
             $user=New-ADUser @attributes @common
             $data=Password-Result $user
             try {$data.department_group=Set-DepartmentMembership $user '' ([string]$request.department)} catch {$data.warning='La cuenta se creó, pero no se pudo asignar el grupo del departamento. Conserva la contraseña y vuelve a guardar el departamento.'}
+        }
+        {$_ -in 'expiry-info','expiry-set','expiry-disable'} {
+            $user=Get-ScopedUser $request.identifier
+            if($request.action -eq 'expiry-set') {
+                if($null -eq $request.expires_at) {Clear-ADAccountExpiration -Identity $user @common}
+                else {
+                    $deadline=[DateTimeOffset]::Parse([string]$request.expires_at,[Globalization.CultureInfo]::InvariantCulture)
+                    Set-ADAccountExpiration -Identity $user -DateTime $deadline.UtcDateTime @common
+                }
+                $user=Get-ScopedUser $request.identifier
+            }
+            $data=Expiry-Result $user
+            if($request.action -eq 'expiry-disable') {
+                if($null -eq $data.expires_at -or $data.expires_at -ne [long]$request.expected_at) {$data.conflict=$true}
+                else {
+                    if([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() -lt $data.expires_at){throw 'Deadline not reached'}
+                    $changed=[bool]$user.Enabled
+                    if($changed){Disable-ADAccount -Identity $user @common}
+                    $data=Expiry-Result (Get-ScopedUser $request.identifier)
+                    $data.changed=$changed
+                }
+            }
         }
         'stamps' {
             $domain=Get-ADDomain @common

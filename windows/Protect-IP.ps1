@@ -5,7 +5,7 @@ $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 try {
     $p=[Console]::In.ReadToEnd() | ConvertFrom-Json
-    if($p.action -in @('monitor','alert')) {
+    if($p.action -in @('monitor','alert','user-alert')) {
         $root=Join-Path $env:ProgramData 'FreshkampoTelegramMonitor'
         $config=Get-Content -LiteralPath (Join-Path $root 'config.json') -Raw | ConvertFrom-Json
         $tokenPath=Join-Path $root 'token.dpapi'
@@ -18,6 +18,15 @@ try {
             @{ok=$true;available=$true;message='Monitor existente y token protegido disponibles. No se ha enviado mensaje de prueba.'} | ConvertTo-Json -Compress
             exit 0
         }
+        if($p.action -eq 'user-alert') {
+            $username=[string]$p.username
+            if(-not $username -or $username.Length -gt 256 -or $username -match '[\x00-\x1f]'){throw 'Invalid account name'}
+            $id=[Guid]::ParseExact([string]$p.event_id,'N').ToString('N')
+            $at=[DateTimeOffset]::FromUnixTimeSeconds([long]$p.at).UtcDateTime.ToString('u')
+            $expires=[DateTimeOffset]::FromUnixTimeSeconds([long]$p.expires).UtcDateTime.ToString('u')
+            $outcome=if($p.changed){'Deshabilitada por vencimiento'}else{'Ya estaba deshabilitada al revisar el vencimiento'}
+            $text="METAKAMPO | USUARIO DESHABILITADO`nServidor: $env:COMPUTERNAME`nUsuario: $username`nVencimiento (UTC): $expires`nConfirmado (UTC): $at`nResultado: $outcome`nReferencia: $id"
+        } else {
         $ip=[Net.IPAddress]::Parse([string]$p.ip).ToString()
         $id=[Guid]::ParseExact([string]$p.event_id,'N').ToString('N')
         $at=[DateTimeOffset]::FromUnixTimeSeconds([long]$p.at).UtcDateTime.ToString('u')
@@ -25,6 +34,7 @@ try {
         $count=[int]$p.failures
         if($count -lt 0 -or $count -gt 100000000){throw 'Conteo inválido.'}
         $text="METAKAMPO | IP BLOQUEADA`nServidor: $env:COMPUTERNAME`nIP: $ip`nIntentos fallidos: $count`nBloqueada desde (UTC): $at`nVence (UTC): $expires`nRegla: entrada de todos los protocolos`nReferencia: $id"
+        }
         $body=@{chat_id=[string]$config.ChatId;text=$text;protect_content=$true}
         if($config.TemaId){$body.message_thread_id=[long]$config.TemaId}
         [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12

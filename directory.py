@@ -10,13 +10,14 @@ class DirectoryError(Exception):
 class DirectoryConflict(DirectoryError):
     status_code=409
 
-def call_ad(action, **values):
+def call_ad(action, _configuration=None, **values):
     if os.name != 'nt':
         raise DirectoryError('La conexión real requiere Windows Server y el módulo ActiveDirectory.')
-    server, ou = os.environ.get('FK_AD_SERVER'), os.environ.get('FK_AD_OU')
+    configuration = _configuration if _configuration is not None else dict(server=os.environ.get('FK_AD_SERVER'),ou=os.environ.get('FK_AD_OU'),suffix=os.environ.get('FK_AD_UPN_SUFFIX',''))
+    server, ou = configuration.get('server'), configuration.get('ou')
     if not server or not ou:
         raise DirectoryError('Configura el controlador de dominio y la OU autorizada.')
-    data = dict(action=action, server=server, ou=ou, upnSuffix=os.environ.get('FK_AD_UPN_SUFFIX', ''), **values)
+    data = dict(action=action, server=server, ou=ou, upnSuffix=configuration.get('suffix',''), **values)
     script = Path(__file__).parent / 'windows' / 'directory.ps1'
     try:
         result = subprocess.run(['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(script)],

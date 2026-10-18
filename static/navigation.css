@@ -1,0 +1,19 @@
+.topbar-start{display:flex;align-items:center;gap:var(--fk-space-4);min-width:0}
+#main-sidebar{overflow-y:auto}
+.expiry-note{display:block;white-space:normal;max-width:var(--layout-rail);margin-top:var(--fk-space-2)}
+@media(min-width:1024px){
+ .menu-collapsed{--layout-sidebar:var(--fk-space-20)}
+ .menu-collapsed #main-sidebar{padding:var(--fk-space-6) var(--fk-space-3)}
+ .menu-collapsed .sidebar .brand{padding:0;justify-content:center}
+ .menu-collapsed .sidebar .brand>span,.menu-collapsed .workspace-label,.menu-collapsed .environment,.menu-collapsed .sidebar .nav-label{display:none}
+ .menu-collapsed .sidebar nav{margin-top:var(--fk-space-8)}
+ .menu-collapsed .sidebar .nav{justify-content:center;padding:var(--fk-space-3);min-width:var(--fk-control-lg)}
+}
+@media(max-width:1023px){
+ .menu-collapsed .sidebar nav,.menu-collapsed .sidebar-bottom{display:none}
+ .menu-collapsed #main-sidebar{padding:0;border:0}
+ .topbar-start{gap:var(--fk-space-2)}
+ .topbar-start .breadcrumb{max-width:none}
+}
+#account-deadline+.helper{margin-top:var(--fk-space-2)}
+.expiry-note{min-width:calc(var(--fk-space-20) * 2)}
