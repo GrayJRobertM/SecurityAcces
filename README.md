@@ -130,3 +130,5 @@ Referencias: [New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/
 Menú lateral colapsable y vencimiento de cuentas Windows/AD con deshabilitación confirmada y alerta Telegram. Consulta la sección 1.7.0 de [DESKTOP.md](DESKTOP.md) para fechas, zona horaria, disponibilidad, reintentos y restricciones.
 
 La aplicación de escritorio 1.8.0 incorpora **Actualizaciones** desde GitHub Releases, con metadatos firmados, verificación del instalador, respaldo cifrado y confirmación del propietario. Se necesita una instalación manual inicial de 1.8.0; las siguientes se descargan y aplican desde el programa. Consulta [DESKTOP.md](DESKTOP.md) y [RELEASE-NOTES.md](RELEASE-NOTES.md).
+
+La versión1.9.0 ejecuta la **protección IP** mediante una tarea SYSTEM al inicio, independiente de cerrar Metakampo o cerrar sesión. Muestra su actividad, consulta fallos recientes directamente y da un resultado visible al comprobar el monitor. Los otros módulos conservan sus requisitos de propietario abierto. Consulta [RELEASE-NOTES.md](RELEASE-NOTES.md) y la sección1.9.0 de [DESKTOP.md](DESKTOP.md).

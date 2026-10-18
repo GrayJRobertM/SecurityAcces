@@ -75,7 +75,9 @@ jobs:
         if: always()
         with:
           name: Metakampo-Upgrade-Verification
-          path: release/UPGRADE-SMOKE.txt
+          path: |
+            release/UPGRADE-SMOKE.txt
+            release/BACKGROUND-SMOKE.txt
           if-no-files-found: warn
   publish:
     needs: [sign, upgrade]

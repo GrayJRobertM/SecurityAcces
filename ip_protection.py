@@ -38,6 +38,20 @@ def network(value):
     return n
 
 
+class ProtectionError(OSError):pass
+
+ERRORS={
+ 'MONITOR_CONFIG':'No se encontró config.json del monitor en ProgramData/FreshkampoTelegramMonitor.',
+ 'MONITOR_TOKEN':'No se encontró token.dpapi del monitor existente.',
+ 'MONITOR_CHAT':'El ChatId del monitor no tiene un formato válido.',
+ 'MONITOR_DPAPI':'Windows no pudo abrir el token del monitor con los permisos de este proceso.',
+ 'MONITOR_FORMAT':'La credencial protegida del monitor tiene un formato inválido.',
+ 'SECURITY_READ':'No se pudo consultar Security. Revisa permisos y auditoría de inicios de sesión fallidos.',
+ 'SECURITY_LIMIT':'Hay más de 10.000 fallos en el periodo. Reduce la ventana para revisar la protección sin omitir eventos.',
+ 'FIREWALL':'Windows no confirmó la regla. Revisa el Firewall y las políticas que permiten reglas locales.',
+ 'TELEGRAM_SEND':'Telegram no confirmó la entrega. Se reintentará sin mostrar la credencial.',
+}
+
 def native(action, **values):
     try:
         result = subprocess.run([local_powershell_path(), '-NoLogo', '-NoProfile', '-NonInteractive',
@@ -45,21 +59,30 @@ def native(action, **values):
                                 input=json.dumps(dict(action=action, **values)), capture_output=True,
                                 text=True, encoding='utf-8', timeout=30,
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        data = json.loads(result.stdout.lstrip('\ufeff'))
-        if result.returncode or not isinstance(data, dict) or not data.get('ok'):
-            raise ValueError()
+        try:data=json.loads(result.stdout.lstrip('\ufeff'))
+        except ValueError:
+            diagnostic=(str(result.stderr)+' '+str(result.stdout)).lower()
+            if any(x in diagnostic for x in ('pssecurityexception','running scripts is disabled','digitally signed')):
+                raise ProtectionError('La política PowerShell impidió ejecutar la comprobación. Solicita validar la firma del script. [PS_POLICY]') from None
+            raise ProtectionError('Windows PowerShell no devolvió una respuesta válida. [PS_RESPONSE]') from None
+        if result.returncode or not isinstance(data,dict) or not data.get('ok'):
+            code=data.get('code') if isinstance(data,dict) else None
+            raise ProtectionError(ERRORS.get(code,'Windows no confirmó la operación de protección IP o del monitor Telegram.')+(' ['+code+']' if code in ERRORS else ''))
         return data
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        raise OSError('Windows no confirmó la operación de protección IP o del monitor Telegram.') from None
+    except ProtectionError:raise
+    except subprocess.TimeoutExpired:raise ProtectionError('La comprobación excedió 30 segundos. Revisa Windows antes de repetirla. [PS_TIMEOUT]') from None
+    except (OSError, ValueError):raise ProtectionError('No se pudo iniciar la comprobación de protección IP. [PS_LAUNCH]') from None
 
 
 class IPProtection:
-    def __init__(self, database, event_database, key, demo=False, backend=None, clock=time.time):
+    def __init__(self, database, event_database, key, demo=False, backend=None, clock=time.time, failure_reader=None):
         self.path = Path(database)
         self.events = Path(event_database)
         self.demo = demo
         self.key = key
         self.backend = backend or native
+        self.failure_reader=failure_reader
+        self.autonomous=False
         self.clock = clock
         self.server = socket.getfqdn().lower()
         self.cancel = threading.Event()
@@ -74,6 +97,9 @@ class IPProtection:
             CREATE UNIQUE INDEX IF NOT EXISTS live_block ON blocks(ip) WHERE status IN ('pending','blocked','error');
             CREATE TABLE IF NOT EXISTS resets(ip TEXT PRIMARY KEY,after REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY,ip TEXT NOT NULL,failures INTEGER NOT NULL,created REAL NOT NULL,expires REAL NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,next_try REAL NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '');
+            CREATE TABLE IF NOT EXISTS migration(id INTEGER PRIMARY KEY CHECK(id=1),at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS runtime(id INTEGER PRIMARY KEY CHECK(id=1),heartbeat REAL,pid INTEGER,last_read REAL,failures INTEGER NOT NULL DEFAULT 0);
+            INSERT OR IGNORE INTO runtime(id) VALUES(1);
             CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY,at REAL NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,result TEXT NOT NULL);
             ''')
             db.execute('INSERT OR IGNORE INTO config(id,instance) VALUES(1,?)', (uuid.uuid4().hex,))
@@ -96,13 +122,16 @@ class IPProtection:
         with self.db() as db:
             config = dict(db.execute('SELECT * FROM config').fetchone())
             config.pop('instance')
+            runtime=dict(db.execute('SELECT * FROM runtime WHERE id=1').fetchone())
             try:
                 with connection(self.events,timeout=15) as source:
                     row=source.execute("SELECT last_seen FROM collectors WHERE id='local-desktop'").fetchone()
                     last_collection=row[0] if row else None
             except sqlite3.Error:last_collection=None
+            if self.failure_reader:last_collection=runtime['last_read']
             totals=dict(active=db.execute("SELECT COUNT(*) FROM blocks WHERE status IN ('pending','blocked','error')").fetchone()[0],pending_alerts=db.execute("SELECT COUNT(*) FROM notifications WHERE status='pending'").fetchone()[0])
             return dict(config=config, demo=self.demo, totals=totals, last_collection=last_collection,
+                        engine=dict(autonomous=self.autonomous,running=bool(runtime['heartbeat'] and self.clock()-runtime['heartbeat']<90),**runtime),
                         blocks=[dict(x) for x in db.execute('SELECT * FROM blocks ORDER BY created DESC LIMIT 200')],
                         whitelist=[dict(x) for x in db.execute('SELECT * FROM whitelist ORDER BY created DESC')],
                         alerts=[dict(x) for x in db.execute('SELECT * FROM notifications ORDER BY created DESC LIMIT 50')],
@@ -207,9 +236,10 @@ class IPProtection:
         with self.lock:
             try:
                 self._tick()
-            except Exception:
+            except Exception as exc:
                 with self.db() as db:
-                    db.execute("UPDATE config SET error='No se completó la revisión. Comprueba Windows y la lectura de Security.'")
+                    message=str(exc) if isinstance(exc,ProtectionError) else 'No se completó la revisión. Comprueba Windows y la lectura de Security.'
+                    db.execute("UPDATE config SET error=?",(message,))
             self._notify()
 
     def _tick(self):
@@ -232,31 +262,50 @@ class IPProtection:
                 elif row['status']!='blocked' or (verified is not None and (row['rule'] not in verified or verified[row['rule']].get('ip')!=row['ip'] or not all(verified[row['rule']].get(k) for k in ('enabled','block','inbound')))):self._apply(db,row,c)
             db.commit()
             if c['enabled'] and not self.demo:
-                with connection(self.events,timeout=15) as events:
-                    # Local host only. Never firewall the receiver for a remote collector's events.
-                    candidates=events.execute('SELECT ip,COUNT(*),MAX(occurred),MAX(username) FROM windows_events WHERE source=\'windows\' AND server=? AND event_id=4625 AND logon_type IN (10'+(',3' if c['network_failures'] else '')+') AND occurred>=? AND occurred<=? GROUP BY ip LIMIT 10001',
-                        (self.server,max(c['since'],now-c['window_minutes']*60),now)).fetchall()
-                    if len(candidates)>10000:raise ValueError('Demasiadas IP; revisión pendiente.')
-                    # Count again after a manual release/expiry, respecting individual reset cutoffs.
+                if self.failure_reader:
+                    cutoff=max(c['since'],now-c['window_minutes']*60)
+                    batch=self.failure_reader('failures',since=cutoff,until=now)
+                    rows=batch.get('events')
+                    if not isinstance(rows,list) or len(rows)>10000:raise ProtectionError(ERRORS['SECURITY_LIMIT'])
                     grouped={}
-                    for raw,count,last,user in candidates:
-                        try:ip=address(raw)
+                    for row in rows:
+                        if not isinstance(row,dict) or type(row.get('at')) not in (int,float) or type(row.get('type')) is not int:raise ProtectionError(ERRORS['SECURITY_READ'])
+                        if not cutoff<=row['at']<=now or row['type'] not in ((10,3) if c['network_failures'] else (10,)):continue
+                        try:ip=address(row.get('ip'))
                         except ValueError:continue
                         if self.allowed(ip,white):continue
-                        canonical=str(ip)
-                        reset=db.execute('SELECT after FROM resets WHERE ip=?',(canonical,)).fetchone()
-                        if reset:
-                            count=events.execute('SELECT COUNT(*) FROM windows_events WHERE source=\'windows\' AND server=? AND event_id=4625 AND logon_type IN (10'+(',3' if c['network_failures'] else '')+') AND ip=? AND occurred>? AND occurred>=? AND occurred<=?',
-                                (self.server,raw,reset[0],max(c['since'],now-c['window_minutes']*60),now)).fetchone()[0]
-                        previous=grouped.get(canonical,(0,''))
-                        grouped[canonical]=(previous[0]+count,user)
-                    for ip,(count,user) in grouped.items():
-                        if self.cancel.is_set():return
-                        if count<c['threshold'] or db.execute("SELECT 1 FROM blocks WHERE ip=? AND status IN ('pending','blocked','error')",(ip,)).fetchone():continue
-                        row=self._pending(db,ip,count,user,'automático','sistema',c)
-                        db.commit()
-                        self._apply(db,row,c)
-                        db.commit()
+                        canonical=str(ip);reset=db.execute('SELECT after FROM resets WHERE ip=?',(canonical,)).fetchone()
+                        if reset and row['at']<=reset[0]:continue
+                        user=row.get('username','')
+                        if not isinstance(user,str) or len(user)>256 or any(ord(x)<32 for x in user):user=''
+                        previous=grouped.get(canonical,(0,''));grouped[canonical]=(previous[0]+1,user)
+                    db.execute('UPDATE runtime SET last_read=?,failures=? WHERE id=1',(now,len(rows)))
+                else:
+                    with connection(self.events,timeout=15) as events:
+                        # Local host only. Never firewall the receiver for a remote collector's events.
+                        candidates=events.execute('SELECT ip,COUNT(*),MAX(occurred),MAX(username) FROM windows_events WHERE source=\'windows\' AND server=? AND event_id=4625 AND logon_type IN (10'+(',3' if c['network_failures'] else '')+') AND occurred>=? AND occurred<=? GROUP BY ip LIMIT 10001',
+                            (self.server,max(c['since'],now-c['window_minutes']*60),now)).fetchall()
+                        if len(candidates)>10000:raise ValueError('Demasiadas IP; revisión pendiente.')
+                        # Count again after a manual release/expiry, respecting individual reset cutoffs.
+                        grouped={}
+                        for raw,count,last,user in candidates:
+                            try:ip=address(raw)
+                            except ValueError:continue
+                            if self.allowed(ip,white):continue
+                            canonical=str(ip)
+                            reset=db.execute('SELECT after FROM resets WHERE ip=?',(canonical,)).fetchone()
+                            if reset:
+                                count=events.execute('SELECT COUNT(*) FROM windows_events WHERE source=\'windows\' AND server=? AND event_id=4625 AND logon_type IN (10'+(',3' if c['network_failures'] else '')+') AND ip=? AND occurred>? AND occurred>=? AND occurred<=?',
+                                    (self.server,raw,reset[0],max(c['since'],now-c['window_minutes']*60),now)).fetchone()[0]
+                            previous=grouped.get(canonical,(0,''))
+                            grouped[canonical]=(previous[0]+count,user)
+                for ip,(count,user) in grouped.items():
+                    if self.cancel.is_set():return
+                    if count<c['threshold'] or db.execute("SELECT 1 FROM blocks WHERE ip=? AND status IN ('pending','blocked','error')",(ip,)).fetchone():continue
+                    row=self._pending(db,ip,count,user,'automático','sistema',c)
+                    db.commit()
+                    self._apply(db,row,c)
+                    db.commit()
             db.execute("UPDATE config SET last_tick=?,error=''",(now,))
 
     def _notify(self):
@@ -275,7 +324,7 @@ class IPProtection:
     def monitor_status(self):
         if self.demo:return dict(available=False,demo=True,message='Simulación: no se consulta ni envía a Telegram.')
         try:return self.backend('monitor')
-        except Exception:return dict(available=False,message='Monitor no disponible. Revisa config.json, token.dpapi y permisos del propietario.')
+        except Exception as exc:return dict(available=False,message=str(exc) if isinstance(exc,ProtectionError) else 'Monitor no disponible. Revisa config.json, token.dpapi y permisos del propietario.')
 
     def start(self):
         if self.thread and self.thread.is_alive():return

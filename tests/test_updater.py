@@ -23,11 +23,11 @@ class SignatureTests(unittest.TestCase):
   cls.key=rsa.generate_private_key(public_exponent=65537,key_size=3072)
   cls.public=cls.key.public_key().public_bytes(serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo).decode()
  def manifest(self,**extra):
-  value=dict(schema=1,version='1.9.0',tag='metakampo-v1.9.0',platform='windows-x64',asset=u.ASSET,size=6,sha256=hashlib.sha256(b'MZtest').hexdigest(),published_at=int(time.time()));value.update(extra);return value
+  value=dict(schema=1,version='2.0.0',tag='metakampo-v2.0.0',platform='windows-x64',asset=u.ASSET,size=6,sha256=hashlib.sha256(b'MZtest').hexdigest(),published_at=int(time.time()));value.update(extra);return value
  def signed(self,value):
   payload=json.dumps(value).encode();return json.dumps(dict(payload=base64.b64encode(payload).decode(),signature=base64.b64encode(self.key.sign(payload,padding.PKCS1v15(),hashes.SHA256())).decode())).encode()
  def test_signature_tamper_foreign_key_and_strict_fields(self):
-  raw=self.signed(self.manifest());self.assertEqual(u.verified_manifest(raw,self.public)['version'],'1.9.0')
+  raw=self.signed(self.manifest());self.assertEqual(u.verified_manifest(raw,self.public)['version'],'2.0.0')
   for data in [raw.replace(b'payload',b'payloae'),raw+b'x',b'x'*32769,self.signed(self.manifest(size=True)),self.signed(self.manifest(version='1.09.0')),self.signed(self.manifest(asset='other.exe')),self.signed(self.manifest(tag='other')),self.signed(self.manifest(platform='other')),self.signed(self.manifest(extra='injected')),self.signed(self.manifest(published_at=int(time.time())+90000))]:
    with self.assertRaises(u.UpdateError):u.verified_manifest(data,self.public)
   with self.assertRaises(u.UpdateError):u.verified_manifest(raw) # foreign key never trusted
@@ -45,7 +45,7 @@ class SignatureTests(unittest.TestCase):
   for url in ['http://github.com/a','https://evil.test/a','https://github.com@evil.test/a','https://github.com:444/a','file:///tmp/a']:
    with self.assertRaises(u.UpdateError):u.check_url(url)
   with self.assertRaises(u.UpdateError):u.asset_url('../../other','setup.exe')
-  u.check_url(u.asset_url('metakampo-v1.9.0',u.ASSET))
+  u.check_url(u.asset_url('metakampo-v2.0.0',u.ASSET))
  def test_check_download_and_no_version_rollback(self):
   with tempfile.TemporaryDirectory() as folder:
    manifest=self.manifest();raw=self.signed(manifest)
@@ -56,7 +56,7 @@ class SignatureTests(unittest.TestCase):
     manager.download();manager.thread.join(5);self.assertEqual(manager.phase,'ready',manager.message)
     with self.assertRaises(u.UpdateError):manager.check()
     self.assertNotIn('@@PUBLIC_XML@@',(Path(folder)/'Apply-Update.ps1').read_text(encoding='utf-8-sig'))
-    manager.current='1.9.0'
+    manager.current='2.0.0'
     with self.assertRaises(u.UpdateError):manager._download()
  def test_failed_preparation_resumes_without_executing(self):
   with tempfile.TemporaryDirectory() as folder:
@@ -64,7 +64,7 @@ class SignatureTests(unittest.TestCase):
    manager=u.UpdateManager(folder,root=folder);manager.latest=manifest;manager.stage=stage;manager.phase='ready';manager.prepare=Mock(side_effect=u.UpdateError('Importación activa'));manager.resume=Mock();manager.close=Mock()
    original=u.verified_manifest
    with patch.object(u,'verified_manifest',side_effect=lambda raw:original(raw,self.public)),patch.object(u.subprocess,'Popen') as execute:
-    manager.apply('1.9.0');manager.thread.join(5);self.assertEqual(manager.phase,'error');self.assertFalse(manager.draining);manager.resume.assert_called_once();execute.assert_not_called();manager.close.assert_not_called()
+    manager.apply('2.0.0');manager.thread.join(5);self.assertEqual(manager.phase,'error');self.assertFalse(manager.draining);manager.resume.assert_called_once();execute.assert_not_called();manager.close.assert_not_called()
  def test_busy_request_and_backup_preserve_sqlite_and_cipher_bytes(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder).resolve();(root/'demo').mkdir();(root/'installation.dpapi').write_bytes(b'ciphertext-only')
@@ -90,8 +90,8 @@ class UpdateAPITests(unittest.TestCase):
    self.assertEqual(self.client.post('/api/updates/check',json={}).status_code,403)
    self.assertEqual(self.client.post('/api/updates/check',json={},headers={'X-CSRF-Token':csrf},environ_overrides={'metakampo.shared_client':True}).status_code,403)
    self.assertEqual(self.client.post('/api/updates/check',json={},headers={'X-CSRF-Token':csrf}).status_code,202);check.assert_called_once()
-   self.assertEqual(self.client.post('/api/updates/apply',json=dict(admin_password='wrong',version='1.9.0'),headers={'X-CSRF-Token':csrf}).status_code,403);apply.assert_not_called()
-   self.assertEqual(self.client.post('/api/updates/apply',json=dict(admin_password='test',version='1.9.0'),headers={'X-CSRF-Token':csrf}).status_code,202);apply.assert_called_once_with('1.9.0')
+   self.assertEqual(self.client.post('/api/updates/apply',json=dict(admin_password='wrong',version='2.0.0'),headers={'X-CSRF-Token':csrf}).status_code,403);apply.assert_not_called()
+   self.assertEqual(self.client.post('/api/updates/apply',json=dict(admin_password='test',version='2.0.0'),headers={'X-CSRF-Token':csrf}).status_code,202);apply.assert_called_once_with('2.0.0')
  def test_other_administrator_cannot_launch_installer(self):
   csrf=self.login(self.client)
   r=self.client.post('/api/operators',json=dict(username='support',name='Support',password='a',admin_password='test'),headers={'X-CSRF-Token':csrf});self.assertEqual(r.status_code,201)
@@ -113,7 +113,7 @@ class NativeUpdateTests(unittest.TestCase):
    command="([IO.Directory]::GetAccessControl('"+str(stage)+"')).Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }"
    acl=subprocess.check_output([local_powershell_path(),'-NoProfile','-NonInteractive','-Command',command],text=True)
    self.assertEqual(set(acl.split()),{'S-1-5-18','S-1-5-32-544'})
-   (stage/'plan.json').write_text(json.dumps(dict(schema=1,version='1.9.0',owner_pid=os.getpid(),interactive=False)))
+   (stage/'plan.json').write_text(json.dumps(dict(schema=1,version='2.0.0',owner_pid=os.getpid(),interactive=False)))
    (stage/u.ENVELOPE).write_text('{}');(stage/u.ASSET).write_bytes(b'MZ-not-executable')
    (stage/'Apply-Update.ps1').write_text((u.BASE/'windows/Apply-Update.ps1').read_text().replace('@@PUBLIC_XML@@',u.PUBLIC_XML),encoding='utf-8-sig')
    r=subprocess.run([local_powershell_path(),'-NoProfile','-NonInteractive','-File',str(stage/'Apply-Update.ps1'),'-Plan',str(stage/'plan.json')],timeout=30,capture_output=True)

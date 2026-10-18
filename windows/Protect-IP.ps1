@@ -1,18 +1,43 @@
 #Requires -Version 5.1
 # Own exact-IP rules only. Token is read locally and never returned/logged.
 $ErrorActionPreference='Stop'
+$env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')+';'+$env:PSModulePath
+$code='FIREWALL'
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 try {
     $p=[Console]::In.ReadToEnd() | ConvertFrom-Json
+    if($p.action -eq 'failures') {
+        $code='SECURITY_READ'
+        $since=[DateTimeOffset]::FromUnixTimeMilliseconds([long]([double]$p.since*1000)).UtcDateTime
+        $until=[DateTimeOffset]::FromUnixTimeMilliseconds([long]([double]$p.until*1000)).UtcDateTime
+        if($since -gt $until -or ($until-$since).TotalHours -gt 24.01){throw 'Invalid period'}
+        try {$items=@(Get-WinEvent -FilterHashtable @{LogName='Security';Id=4625;StartTime=$since;EndTime=$until} -Oldest -MaxEvents 10001 -ErrorAction Stop)}
+        catch {if($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*'){$items=@()}else{throw}}
+        if($items.Count -gt 10000){$code='SECURITY_LIMIT';throw 'Coverage exceeded'}
+        $events=@()
+        foreach($item in $items){
+            [xml]$xml=$item.ToXml();$fields=@{}
+            foreach($entry in $xml.Event.EventData.Data){$fields[[string]$entry.Name]=[string]$entry.'#text'}
+            $events+=@{record_id=[long]$item.RecordId;at=([DateTimeOffset]$item.TimeCreated.ToUniversalTime()).ToUnixTimeMilliseconds()/1000.0;type=[int]$fields.LogonType;ip=[string]$fields.IpAddress;username=[string]$fields.TargetUserName}
+        }
+        @{ok=$true;events=@($events)}|ConvertTo-Json -Depth 4 -Compress
+        exit 0
+    }
     if($p.action -in @('monitor','alert','user-alert')) {
         $root=Join-Path $env:ProgramData 'FreshkampoTelegramMonitor'
+        $code='MONITOR_CONFIG'
         $config=Get-Content -LiteralPath (Join-Path $root 'config.json') -Raw | ConvertFrom-Json
         $tokenPath=Join-Path $root 'token.dpapi'
-        if(-not (Test-Path -LiteralPath $tokenPath) -or [string]$config.ChatId -notmatch '^-?[0-9]{1,20}$') { throw 'Monitor incompleto.' }
+        $code='MONITOR_TOKEN'
+        if(-not (Test-Path -LiteralPath $tokenPath)){throw 'Missing protected token'}
+        $code='MONITOR_CHAT'
+        if([string]$config.ChatId -notmatch '^-?[0-9]{1,20}$'){throw 'Invalid chat'}
+        $code='MONITOR_DPAPI'
         Add-Type -AssemblyName System.Security
         $bytes=[Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($tokenPath),$null,[Security.Cryptography.DataProtectionScope]::LocalMachine)
         try {$token=[Text.Encoding]::UTF8.GetString($bytes)} finally {[Array]::Clear($bytes,0,$bytes.Length)}
+        $code='MONITOR_FORMAT'
         if($token -notmatch '^[0-9]+:[A-Za-z0-9_-]+$'){throw 'Token inválido.'}
         if($p.action -eq 'monitor') {
             @{ok=$true;available=$true;message='Monitor existente y token protegido disponibles. No se ha enviado mensaje de prueba.'} | ConvertTo-Json -Compress
@@ -39,6 +64,7 @@ try {
         if($config.TemaId){$body.message_thread_id=[long]$config.TemaId}
         [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
         # Sending only: never getUpdates, so existing restart/command receiver keeps its offset.
+        $code='TELEGRAM_SEND'
         $r=Invoke-RestMethod -Uri ('https://api.telegram.org/bot{0}/sendMessage' -f $token) -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes(($body|ConvertTo-Json -Compress))) -TimeoutSec 12 -MaximumRedirection 0
         if(-not $r.ok){throw 'Telegram sin confirmar.'}
         $token=$null
@@ -88,6 +114,6 @@ try {
     @{ok=$true} | ConvertTo-Json -Compress
 } catch {
     # HTTP/DPAPI errors can contain secrets; never return exception contents.
-    @{ok=$false;error='No se confirmó la operación. Revisa permisos, Firewall de Windows/políticas o monitor Telegram existente según la acción.'} | ConvertTo-Json -Compress
+    @{ok=$false;code=$code;error='No se confirmó la operación. Revisa permisos, Firewall de Windows/políticas o monitor Telegram existente según la acción.'} | ConvertTo-Json -Compress
     exit 1
 }

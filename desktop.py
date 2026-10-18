@@ -226,9 +226,18 @@ def main():
     parser.add_argument('--shared-smoke-host', action='store_true')
     parser.add_argument('--configure', action='store_true')
     parser.add_argument('--self-test', action='store_true')
+    for flag in ('protection-worker','install-protection','stop-protection','remove-protection'):
+        parser.add_argument('--'+flag,action='store_true')
     parser.add_argument('--gui-smoke-test', action='store_true')
     parser.add_argument('--gui-smoke-report', default='gui-smoke-report.txt')
     args = parser.parse_args()
+    if any(getattr(args,x) for x in ('protection_worker','install_protection','stop_protection','remove_protection')):
+        from background_protection import worker,install_task,stop_worker,remove_task
+        if args.protection_worker:worker()
+        elif args.install_protection:install_task()
+        elif args.stop_protection:stop_worker()
+        else:remove_task()
+        return
     if args.self_test:
         # A real frozen-executable smoke test uses ephemeral DPAPI data, never production.
         with tempfile.TemporaryDirectory(prefix='fk-selftest-') as folder:
@@ -297,8 +306,9 @@ def main():
             old.stop()
         collectors.clear()
         if app.config['MODE'] in ('ad','local'):
-            collectors.append(app.ip_protection)
-            app.ip_protection.start()
+            if not app.ip_protection.autonomous:
+                collectors.append(app.ip_protection)
+                app.ip_protection.start()
             collectors.append(app.account_expiry)
             app.account_expiry.start()
         if app.config['MODE'] in ('ad','local'):
@@ -334,6 +344,9 @@ def main():
         if any(t.is_alive() for t in getattr(app,'sync_threads',[])):
             from updater import UpdateError
             raise UpdateError('Hay una importación en curso. Espera a que termine antes de actualizar.')
+        if updater.root:
+            from background_protection import stop_worker
+            stop_worker()
         for worker in collectors:worker.stop()
         until=time.monotonic()+65
         for worker in collectors:
@@ -343,6 +356,9 @@ def main():
                 from updater import UpdateError
                 raise UpdateError('Una tarea Windows sigue activa. No se instalará hasta que termine.')
     def resume_update():
+        if updater.root:
+            from background_protection import start_worker
+            start_worker()
         for worker in collectors:
             if not worker.cancel.is_set():continue
             worker.thread.join(timeout=50)
@@ -384,6 +400,8 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as exc:
+        if any(x in sys.argv for x in ('--protection-worker','--install-protection','--stop-protection','--remove-protection')):
+            raise SystemExit(1)
         if '--self-test' in sys.argv or '--gui-smoke-test' in sys.argv:
             raise
         if os.name == 'nt':

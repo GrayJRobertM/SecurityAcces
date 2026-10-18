@@ -42,6 +42,8 @@ try:
  manager.latest=manifest;manager.envelope=(release/ENVELOPE).read_bytes();manager.download();manager.thread.join(90)
  if manager.phase!='ready':raise RuntimeError('Signed staging failed: '+manager.message)
  backup=backup_store(folder)
+ if (Path(os.environ['ProgramData'])/'Metakampo/Access/Protection/worker.lock').exists():
+  subprocess.run([str(exe),'--stop-protection'],check=True,timeout=90)
  stage=manager.stage
  (stage/'plan.json').write_text(json.dumps(dict(schema=1,version=manifest['version'],owner_pid=owner.pid,restart_shared=True,interactive=False)))
  helper=subprocess.Popen([local_powershell_path(),'-NoProfile','-NonInteractive','-File',str(stage/'Apply-Update.ps1'),'-Plan',str(stage/'plan.json')])
@@ -62,6 +64,7 @@ try:
   assert db.execute('SELECT hash FROM admin WHERE id=1').fetchone()[0]==admin
   assert unseal(key,identifier,db.execute('SELECT secret FROM vault WHERE id=?',(identifier,)).fetchone()[0])==secret
  assert (backup/'installation.dpapi').exists() and (backup/'demo'/'access.sqlite3').exists()
+ subprocess.run([sys.executable,str(Path(__file__).parent/'verify-background.py'),str(exe),str(release/'BACKGROUND-SMOKE.txt')],check=True,timeout=140)
  (release/'UPGRADE-SMOKE.txt').write_text('Signed installed upgrade '+old_version+' -> '+manifest['version']+' passed. RSA trust, SHA256, protected staging, real installer, installed self-test, same Windows identity, unchanged DPAPI config/admin hash/vault secret, SQLite backup and reopened shared owner verified. No real user data or Telegram used.\n')
  print('Native signed installed upgrade + DPAPI/data preservation passed.')
 finally:

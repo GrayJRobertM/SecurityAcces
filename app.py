@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 from storage import connection
 import time
 import uuid
@@ -480,6 +481,9 @@ def create_app(overrides=None):
     register_user_sync(app,db,audit,throttled,fresh_password,native_directory)
     guard_folder = Path(app.config.get("GUARD_DIR", folder))
     guard = IPProtection(guard_folder / ("ip-protection-demo.sqlite3" if app.config["MODE"]=="demo" else "ip-protection.sqlite3"), database, key, demo=app.config["MODE"]=="demo")
+    if app.config.get('DESKTOP') and app.config['MODE']!='demo' and os.name=='nt' and getattr(sys,'frozen',False):
+        from background_protection import shared_guard
+        guard=shared_guard(guard_folder/'ip-protection.sqlite3',database,key)
     register_ip_protection(app,guard,db,audit,throttled)
     app.ip_protection = guard
     expiry_scope=dict(server=os.environ.get('FK_AD_SERVER'),ou=os.environ.get('FK_AD_OU'),suffix=os.environ.get('FK_AD_UPN_SUFFIX',''))

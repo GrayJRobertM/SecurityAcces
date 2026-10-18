@@ -1,4 +1,4 @@
-#define AppVersion "1.8.0"
+#define AppVersion "1.9.0"
 [Setup]
 AppId={{72FBC267-2574-4268-AB77-36B8374BCA7D}
 AppName=Metakampo Access
@@ -47,7 +47,27 @@ Type: files; Name: "{commondesktop}\Freshkampo Access.lnk"
 Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando el motor de escritorio Microsoft WebView2..."; Flags: waituntilterminated
 Filename: "{app}\MetakampoAccess.exe"; Parameters: "--shared-host"; Description: "Abrir el servidor compartido Metakampo"; Flags: shellexec nowait postinstall skipifsilent runasoriginaluser
 
+[UninstallRun]
+Filename: "{app}\MetakampoAccess.exe"; Parameters: "--remove-protection"; Flags: runhidden waituntilterminated
+
 [Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var Code: Integer;
+begin
+  if CurStep = ssPostInstall then
+    if (not Exec(ExpandConstant('{app}\MetakampoAccess.exe'), '--install-protection', '', SW_HIDE, ewWaitUntilTerminated, Code)) or (Code <> 0) then
+      RaiseException('Windows no registró o inició la protección en segundo plano. Revisa el registro y repara la instalación.');
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var Code: Integer;
+begin
+  Result := '';
+  if FileExists(ExpandConstant('{commonappdata}\Metakampo\Access\Protection\worker.lock')) and FileExists(ExpandConstant('{app}\MetakampoAccess.exe')) then
+    if (not Exec(ExpandConstant('{app}\MetakampoAccess.exe'), '--stop-protection', '', SW_HIDE, ewWaitUntilTerminated, Code)) or (Code <> 0) then
+      Result := 'No se detuvo la protección de Metakampo. Cierra sus tareas pendientes antes de actualizar.';
+end;
+
 function IsServerCore(): Boolean;
 var InstallationType: String;
 begin

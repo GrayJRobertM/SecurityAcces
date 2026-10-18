@@ -117,6 +117,21 @@ class ProtectionAPITests(unittest.TestCase):
 
 @unittest.skipUnless(os.name=='nt' and os.environ.get('FK_NATIVE_IP_TESTS')=='1','Opt-in native Windows firewall test')
 class NativeIPTests(unittest.TestCase):
+    def test_local_security_reader_and_monitor_credentials_without_sending(self):
+        import json,secrets
+        from directory import local_powershell_path
+        self.assertIsInstance(native('failures',since=time.time()-60,until=time.time())['events'],list)
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'ProgramData':folder}):
+            root=Path(folder)/'FreshkampoTelegramMonitor';root.mkdir()
+            with self.assertRaises(OSError) as context:native('monitor')
+            self.assertIn('MONITOR_CONFIG',str(context.exception))
+            (root/'config.json').write_text(json.dumps(dict(ChatId='123456')))
+            script="Add-Type -AssemblyName System.Security;$b=[Text.Encoding]::UTF8.GetBytes([Console]::In.ReadToEnd());$e=[Security.Cryptography.ProtectedData]::Protect($b,$null,[Security.Cryptography.DataProtectionScope]::LocalMachine);[Console]::Write([Convert]::ToBase64String($e))"
+            result=subprocess.run([local_powershell_path(),'-NoProfile','-NonInteractive','-Command',script],input='12345:'+secrets.token_urlsafe(32),capture_output=True,text=True,timeout=20,check=True)
+            import base64
+            (root/'token.dpapi').write_bytes(base64.b64decode(result.stdout))
+            status=native('monitor');self.assertTrue(status['available']);self.assertTrue(status['message'])
+
     def test_owned_documentation_ip_rule_roundtrip(self):
         for ip in ('198.51.100.254','2001:db8::254'):
             instance=uuid.uuid4().hex;rule='Metakampo-IP-'+instance+'-'+uuid.uuid4().hex
@@ -127,3 +142,36 @@ class NativeIPTests(unittest.TestCase):
                 with self.assertRaises(OSError):native('remove',rule='Other-Application-Rule',ip=ip)
             finally:native('remove',rule=rule,ip=ip)
             self.assertEqual(native('list',instance=instance)['rules'],[])
+
+class DirectSecurityTests(unittest.TestCase):
+    setUp=ProtectionTests.setUp
+    tearDown=ProtectionTests.tearDown
+    def test_recent_security_failures_block_without_dashboard_collector(self):
+        self.guard.failure_reader=lambda action,**kw:dict(events=[dict(at=self.now-.01,type=3,ip='198.51.100.80',username='attempted') for _ in range(3)])
+        self.guard.tick();state=self.guard.state()
+        self.assertEqual(state['blocks'][0]['ip'],'198.51.100.80');self.assertEqual(state['blocks'][0]['status'],'blocked')
+        self.assertEqual(state['last_collection'],self.now)
+        self.guard.white_add('198.51.100.80','VPN','admin');self.guard.tick();self.assertFalse(self.rules)
+    def test_direct_security_still_respects_types_cutoff_and_reset(self):
+        rows=[dict(at=self.now-.01,type=3,ip='198.51.100.80',username='attempted') for _ in range(3)]
+        self.guard.failure_reader=lambda action,**kw:dict(events=rows)
+        self.guard.settings(dict(self.policy,network_failures=False),'admin');self.guard.tick();self.assertFalse(self.rules)
+        self.now+=1;self.guard.settings(self.policy,'admin');self.guard.tick();self.assertFalse(self.rules)
+        rows[:]=[dict(at=self.now+.01,type=3,ip='198.51.100.80',username='attempted') for _ in range(3)];self.now+=1;self.guard.tick();self.assertTrue(self.rules)
+        self.guard.release(self.guard.state()['blocks'][0]['id'],'admin');self.guard.tick();self.assertFalse(self.rules)
+    def test_direct_read_failure_is_visible_and_never_creates_false_block(self):
+        from ip_protection import ProtectionError
+        def fail(*args,**kw):raise ProtectionError('Security no disponible. [SECURITY_READ]')
+        self.guard.failure_reader=fail;self.guard.tick();state=self.guard.state();self.assertEqual(state['blocks'],[]);self.assertIn('SECURITY_READ',state['config']['error'])
+
+class MonitorResultTests(unittest.TestCase):
+    def test_monitor_returns_specific_sanitized_code_and_always_has_message(self):
+        from ip_protection import ProtectionError
+        with tempfile.TemporaryDirectory() as folder:
+            def fail(*args,**kw):raise ProtectionError('No se encontró config.json. [MONITOR_CONFIG]')
+            guard=IPProtection(Path(folder)/'g.sqlite3',Path(folder)/'e.sqlite3',b'',backend=fail)
+            state=guard.monitor_status();self.assertFalse(state['available']);self.assertIn('MONITOR_CONFIG',state['message'])
+        response=subprocess.CompletedProcess([],1,'{"ok":false,"code":"MONITOR_DPAPI","error":"https://secret.example/token"}','')
+        with patch('ip_protection.subprocess.run',return_value=response):
+            with self.assertRaises(ProtectionError) as context:native('monitor')
+        self.assertIn('MONITOR_DPAPI',str(context.exception));self.assertNotIn('secret',str(context.exception))

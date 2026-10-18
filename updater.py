@@ -141,6 +141,12 @@ def backup_store(folder):
     target.mkdir(parents=True,exist_ok=False)
     items=[folder/'installation.dpapi',folder/'ip-protection.sqlite3',folder/'ip-protection-demo.sqlite3']
     items += [folder/mode/'access.sqlite3' for mode in ('local','ad','demo')]
+    if os.name=='nt':
+        from background_protection import folder as protection_folder
+        central=protection_folder()/'protection.sqlite3'
+        if central.exists():
+            no_reparse(central)
+            with closing(sqlite3.connect(central,timeout=15)) as source,closing(sqlite3.connect(target/'shared-protection.sqlite3')) as dest:source.backup(dest)
     for path in items:
         if not path.exists():continue
         no_reparse(path)
