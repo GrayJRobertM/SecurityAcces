@@ -27,6 +27,10 @@ jobs:
         env:
           FK_NATIVE_SHARED_TESTS: "1"
         run: python -m unittest discover -s tests -p test_shared_desktop.py -k NativeSharedTests -v
+      - name: Native IP firewall integration
+        env:
+          FK_NATIVE_IP_TESTS: "1"
+        run: python -m unittest discover -s tests -p test_ip_protection.py -k NativeIPTests -v
       - name: Tests with offline geolocation
         run: python -m unittest discover -s tests -v
       - name: Parse every PowerShell script

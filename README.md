@@ -100,3 +100,27 @@ La suite verifica autenticación, CSRF, bloqueo de intentos, cifrado autenticado
 - [Seguridad de Flask](https://flask.palletsprojects.com/en/stable/web-security/)
 - [AES-GCM de cryptography](https://cryptography.io/en/latest/hazmat/primitives/aead/)
 - Fuentes e íconos con sus licencias en `static/fonts/LICENSE-Inter.txt` y `static/LICENSE-Heroicons.txt`.
+
+## Protección de IP y Telegram (1.6.0)
+
+Nuevo módulo **Protección de IP** para el servidor instalado. Empieza desactivado. Configura primero la lista blanca y después el umbral (1–1000 intentos), periodo (1–1440 minutos) y duración del bloqueo (1–43200 minutos). Valores iniciales: 5 fallos en 10 minutos y bloqueo de 60 minutos. Guardar política reinicia la ventana de conteo; no aplica bloqueos por eventos históricos.
+
+- Cuenta eventos Security 4625 tipo 10 del servidor local. Puede incluir tipo 3 de forma explícita: incluye NLA y otros servicios de red y no representa exclusivamente RDP. Nunca usa eventos demo o de recolectores remotos para bloquear este servidor. Requiere auditoría Windows de fallos de inicio de sesión y acceso a Security. El recolector consulta aproximadamente cada 60 segundos y el motor revisa cada 10 segundos; no es un filtro instantáneo.
+- Crea reglas propias persistentes de entrada, para **todos los protocolos desde una IP exacta**, en todos los perfiles. Puede interrumpir sesiones/servicios de una IP compartida por NAT o VPN. No toca reglas ajenas. Hasta 1000 bloqueos activos; al llegar al límite muestra error y requiere revisión. La verificación confirma presencia/configuración de regla y políticas locales; no sustituye una prueba de tráfico real.
+- Lista blanca IPv4/IPv6 o redes CIDR: prioridad sobre bloqueo automático y manual, incluye IPv4 mapeada. Agregar una excepción guarda primero la exclusión y retira bloqueos propios coincidentes. Si Windows rechaza retirar, muestra pendiente/error y reintenta; no afirma éxito. No cambia bloqueos de otras aplicaciones, GPO, routers o monitores anteriores. Loopback, multicast, no especificadas y enlace local se excluyen siempre.
+- Puedes bloquear manualmente, desbloquear o convertir una IP bloqueada en excepción. Retirar un bloqueo reinicia su contador; fallos nuevos pueden volver a bloquearla. Desactivar protección retira reglas automáticas; los manuales conservan su vencimiento. Retirar una excepción solo permite contar fallos nuevos. Historial con actor y estado; últimos 200 bloqueos, 100 acciones y 50 alertas visibles.
+- La configuración/whitelist/reglas son comunes a Local/AD del mismo perfil propietario, en `ip-protection.sqlite3`, con la ACL privada existente. Demo usa otra base y simula reglas/envíos.
+
+### Reutilizar el bot existente
+
+El instalador incorpora el adaptador `windows/Protect-IP.ps1`, **sin token**. Reutiliza el monitor instalado en `%ProgramData%\FreshkampoTelegramMonitor`: `config.json` con `ChatId` numérico y `token.dpapi` DPAPI LocalMachine, según el monitor preparado anteriormente. El propietario elevado necesita leerlos con sus ACL actuales. No copia el token, no debilita permisos, no modifica sus tareas/configuración y no ejecuta sus scripts como código. Lee la configuración/credencial y usa sendMessage contra la API HTTPS fija de Telegram. Si el monitor usa `TemaId`, lo conserva. Para otras rutas/formato se requiere adaptar la integración; no explora archivos arbitrarios.
+
+**Comprobar monitor** verifica configuración y acceso a DPAPI; no envía prueba ni confirma entrega. Activa avisos en el segundo paso de Configurar protección. Genera alerta al confirmar una regla propia; contiene IP, servidor, fallos, fecha/vencimiento UTC y referencia, sin contraseñas. Las alertas pendientes persisten y reintentan con espera exponencial (30 s a 1 h). Telegram no bloquea el registro del bloqueo. Una confirmación perdida o cierre justo después de enviar puede producir duplicados (entrega al menos una vez); la referencia los identifica. No usa getUpdates ni compite con /restart. Si los servidores ya tienen el mismo bot/grupo, comparten ese destino; no cambia bots existentes ni necesita servicio central.
+
+### Disponibilidad y actualización
+
+El proceso propietario debe estar abierto para detectar fallos, reintentar Telegram y retirar reglas al vencer. **Las reglas persisten si la aplicación se cierra, incluso después del vencimiento previsto; se revisan al reabrir.** No añade servicio/tarea ni modifica el monitor de reinicios. Antes de desinstalar, desactiva la política y retira bloqueos manuales. Windows debe permitir reglas locales (GPO), perfiles activos y propietario elevado; cliente compartido conserva asInvoker. No cambia ExecutionPolicy. Cambios requieren contraseña propia y CSRF; auditoría individual.
+
+Instala con el propietario original. Añade primero las IP de administración/VPN a la lista blanca, comprueba el monitor sin enviar, habilita política/alertas y realiza un piloto desde una IP de prueba fuera de la lista blanca, conservando acceso de recuperación. No se enviaron mensajes reales ni se modificó el firewall del servidor del usuario durante el desarrollo.
+
+Referencias: [New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule), [Telegram sendMessage](https://core.telegram.org/bots/api#sendmessage).

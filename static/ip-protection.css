@@ -1,0 +1,9 @@
+.ip-toolbar{display:flex;flex-wrap:wrap;gap:var(--fk-space-3);margin-bottom:var(--fk-space-6)}
+.ip-section{margin-bottom:var(--fk-space-6)}
+#ip-enabled{font-size:var(--fk-text-h2)}
+#ip-blocks-body small{display:block;max-width:var(--layout-rail);white-space:normal;overflow-wrap:anywhere;margin-top:var(--fk-space-2)}
+.ip-options{display:grid;gap:var(--fk-space-3);margin:var(--fk-space-4) 0}
+.ip-options label{display:flex;align-items:flex-start;gap:var(--fk-space-3);margin:0}
+.ip-options input{width:var(--fk-space-5);height:var(--fk-space-5);flex-shrink:0}
+.ip-policy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--fk-space-3)}
+@media(max-width:640px){.ip-policy-grid{grid-template-columns:1fr}.ip-toolbar button{width:100%}#protection-view .card-heading{align-items:flex-start;flex-direction:column}}

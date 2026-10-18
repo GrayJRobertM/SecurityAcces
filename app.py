@@ -25,6 +25,7 @@ from rdp import RDPError, make_package, validate_connection, portal_url, configu
 
 from telemetry import install as install_telemetry, register as register_telemetry
 from access_map import register as register_access_map
+from ip_protection import IPProtection, register as register_ip_protection
 from user_sync import install as install_user_sync, register as register_user_sync, remember as remember_user_password
 
 from authentication import install as install_auth, register as register_operators, account_hash, reauthenticate, current_actor
@@ -469,6 +470,10 @@ def create_app(overrides=None):
     register_access_map(app,db)
     register_operators(app,db,audit,throttled,fresh_password)
     register_user_sync(app,db,audit,throttled,fresh_password,native_directory)
+    guard_folder = Path(app.config.get("GUARD_DIR", folder))
+    guard = IPProtection(guard_folder / ("ip-protection-demo.sqlite3" if app.config["MODE"]=="demo" else "ip-protection.sqlite3"), database, key, demo=app.config["MODE"]=="demo")
+    register_ip_protection(app,guard,db,audit,throttled)
+    app.ip_protection = guard
     app.db_path = database
     return app
 

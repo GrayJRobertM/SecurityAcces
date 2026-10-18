@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.5.0'
+VERSION = '1.6.0'
 
 
 def validate_settings(data):
@@ -86,7 +86,7 @@ class Store:
         os.environ['FK_DESKTOP'] = '1'
         try:
             return create_app(dict(MODE=settings['mode'], DATA_DIR=str(self.folder / settings['mode']),
-                                   DESKTOP=True, SESSION_COOKIE_SECURE=False, TRUSTED_HOSTS=['127.0.0.1']))
+                                   DESKTOP=True, GUARD_DIR=str(self.folder), SESSION_COOKIE_SECURE=False, TRUSTED_HOSTS=['127.0.0.1']))
         finally:
             os.environ.pop('FK_MASTER_KEY', None)
 
@@ -289,6 +289,9 @@ def main():
         for old in collectors:
             old.stop()
         collectors.clear()
+        if app.config['MODE'] in ('ad','local'):
+            collectors.append(app.ip_protection)
+            app.ip_protection.start()
         if app.config['MODE'] in ('ad','local'):
             collector = LocalCollector(app.db_path, folder)
             collectors.append(collector)
