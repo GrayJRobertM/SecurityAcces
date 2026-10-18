@@ -16,7 +16,7 @@ def call_ad(action, _configuration=None, **values):
     configuration = _configuration if _configuration is not None else dict(server=os.environ.get('FK_AD_SERVER'),ou=os.environ.get('FK_AD_OU'),suffix=os.environ.get('FK_AD_UPN_SUFFIX',''))
     server, ou = configuration.get('server'), configuration.get('ou')
     if not server or not ou:
-        raise DirectoryError('Configura el controlador de dominio y la OU autorizada.')
+        raise DirectoryError('Configura el controlador de dominio y la OU o contenedor autorizado.')
     data = dict(action=action, server=server, ou=ou, upnSuffix=configuration.get('suffix',''), **values)
     script = Path(__file__).parent / 'windows' / 'directory.ps1'
     try:

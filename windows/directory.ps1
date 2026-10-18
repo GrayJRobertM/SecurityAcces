@@ -7,7 +7,8 @@ try {
     $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
     $server = [string]$request.server
     $ou = [string]$request.ou
-    $base = Get-ADOrganizationalUnit -Identity $ou -Server $server
+    . ([IO.Path]::Combine($PSScriptRoot,'ad-scope.ps1'))
+    $base = Get-MetakampoADBase $ou $server
     $common = @{ Server = $server; ErrorAction = 'Stop' }
     function Get-ScopedUser($identifier) {
         $found=Get-ADUser -Identity ([Guid]$identifier) -Properties adminCount,AccountExpirationDate @common
@@ -83,7 +84,7 @@ try {
         }
         { $_ -in 'reset','enable','disable','unlock','update','department' } {
             $user = Get-ADUser -Identity ([Guid]$request.identifier) -Properties adminCount,Department @common
-            # Resolve GUID first, then restrict actions to the configured OU subtree.
+            # Resolve GUID first, then restrict actions to the configured OU/container subtree.
             if (-not $user.DistinguishedName.EndsWith(','+$base.DistinguishedName,[StringComparison]::OrdinalIgnoreCase) -or $user.adminCount -eq 1) { throw 'Outside delegated scope' }
             switch ($request.action) {
                 'reset' {

@@ -39,10 +39,13 @@ def validate_settings(data):
         result[name] = value.strip()
     if mode == 'ad':
         from telemetry import hostname
-        result['server'] = hostname(result['server'])
-        result['suffix'] = hostname(result['suffix'])
-        if not re.match(r'(?i)^OU=.+,DC=.+', result['ou']) or ';' in result['ou']:
-            raise ValueError('Indica el DN completo de la OU, por ejemplo OU=Pruebas,DC=empresa,DC=local.')
+        for field, label in (('server', 'Controlador de dominio'), ('suffix', 'Sufijo UPN')):
+            try:
+                result[field] = hostname(result[field])
+            except ValueError:
+                raise ValueError(label + ': indica únicamente un nombre DNS válido, sin espacios, rutas, puerto ni @.') from None
+        if not re.match(r'(?i)^(?:OU|CN)=.+,DC=.+', result['ou']) or ';' in result['ou']:
+            raise ValueError('Indica el DN completo de una OU o contenedor, por ejemplo CN=Users,DC=empresa,DC=local.')
     if mode!='ad':
         result.update(server='',ou='',suffix='')
     for name in ('rdp_cert', 'script_cert'):
@@ -189,7 +192,7 @@ def setup_application(store, gate, on_ready):
                 from windows_native import powershell
                 result = powershell(BASE / 'windows' / 'Check-Desktop.ps1', settings)
                 if not result['ad']:
-                    raise ValueError('Instala RSAT Active Directory y verifica el controlador de dominio, la OU y los permisos de lectura.')
+                    raise ValueError('Instala RSAT Active Directory y verifica el controlador de dominio, la OU o contenedor y los permisos de lectura.')
             if settings['mode']=='local':
                 from directory import call_local
                 try:

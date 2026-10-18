@@ -1,5 +1,11 @@
 # Cambios
 
+## 1.9.1 — Contenedores de usuarios Active Directory
+
+- Admite bases CN=Users y OU sin mover cuentas; valida el tipo de objeto en Windows.
+- Conserva límites de subárbol, protección de cuentas y grupos de departamento propios.
+- Distingue errores de controlador DNS y sufijo UPN en configuración.
+
 ## 2026-10-17 — 1.5.0 Administración compartida en sesiones RDP
 
 - Contraseñas administrativas elegidas libremente sin mínimo ni complejidad obligatoria; política Windows/AD conservada.

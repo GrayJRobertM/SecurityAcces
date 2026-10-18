@@ -1,6 +1,6 @@
 # Metakampo Access · Escritorio Windows Server
 
-La versión 1.7.0 administra usuarios locales Windows o Active Directory según el modo elegido. La versión actual se instala como **Metakampo-Access-Setup-x64.exe** y se abre desde una ventana propia. No necesita Python ni IIS. Consulta [DESKTOP.md](DESKTOP.md) para instalar, configurar AD y utilizar las métricas locales y los clientes RDP protegidos con DPAPI. El portal anterior se conserva en la rama `main`; esta versión está en `codex/metakampo-desktop`.
+La versión 1.9.1 administra usuarios locales Windows o Active Directory según el modo elegido. La versión actual se instala como **Metakampo-Access-Setup-x64.exe** y se abre desde una ventana propia. No necesita Python ni IIS. Consulta [DESKTOP.md](DESKTOP.md) para instalar, configurar AD y utilizar las métricas locales y los clientes RDP protegidos con DPAPI. El portal anterior se conserva en la rama `main`; esta versión está en `codex/metakampo-desktop`.
 
 Las secciones siguientes documentan el portal original y su ejecución de desarrollo; la aplicación de escritorio utiliza el asistente y no un portal HTTPS.
 
@@ -47,7 +47,7 @@ Después abre http://127.0.0.1:8765 e inicia sesión con el usuario `admin` y la
 |---|---|
 | `FK_MODE` | `ad` |
 | `FK_AD_SERVER` | FQDN del controlador de dominio |
-| `FK_AD_OU` | DN de la OU autorizada, incluidos sus descendientes |
+| `FK_AD_OU` | DN de la OU o contenedor autorizado (por ejemplo CN=Users), incluidos sus descendientes |
 | `FK_AD_UPN_SUFFIX` | Sufijo UPN válido del dominio |
 | `FK_MASTER_KEY` | 32 bytes aleatorios codificados en base64; aprovisionar mediante el gestor de secretos del servidor |
 | `FK_TRUSTED_HOSTS` | Nombre DNS del portal, sin esquema ni puerto; separa varios con comas |
