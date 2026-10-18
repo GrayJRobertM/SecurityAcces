@@ -19,6 +19,9 @@ r=subprocess.run([local_powershell_path(),'-NoProfile','-NonInteractive','-Comma
 if r.returncode:raise RuntimeError('Could not verify installed task identity')
 data=json.loads(r.stdout)
 assert data['user'] in ('SYSTEM','S-1-5-18') and data['sid']=='S-1-5-18'
+acl_script="$acl=[IO.Directory]::GetAccessControl((Join-Path $env:ProgramData 'Metakampo\\Access\\Protection'));@($acl.Access|ForEach-Object {$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value})|ConvertTo-Json -Compress"
+r=subprocess.run([local_powershell_path(),'-NoProfile','-NonInteractive','-Command',acl_script],capture_output=True,text=True,check=True,timeout=20)
+assert set(json.loads(r.stdout))=={'S-1-5-18','S-1-5-32-544'}
 assert Path(data['command']).resolve()==exe and Path(data['path']).resolve()==exe and data['args']=='--protection-worker'
 until=time.monotonic()+30
 while time.monotonic()<until:
@@ -26,5 +29,5 @@ while time.monotonic()<until:
  if latest and latest>first[0]:break
  time.sleep(.5)
 else:raise RuntimeError('Background heartbeat did not advance without owner GUI')
-report.write_text('Installed boot task runs as SYSTEM with fixed installed executable. Heartbeat advances after owner/shared GUI windows close; no interactive owner or vault credentials required. Policy remains disabled until configured.\n')
+report.write_text('Installed boot task runs as SYSTEM with fixed installed executable. Private policy ACL permits only SYSTEM/Administrators. Heartbeat advances after owner/shared GUI windows close; no interactive owner or vault credentials required. Policy remains disabled until configured.\n')
 print('Installed background protection identity and owner-independent heartbeat verified.')
