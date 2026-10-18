@@ -1,6 +1,7 @@
 """AD scope regression: real PowerShell adapter with a fake directory module, no domain writes."""
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -66,12 +67,18 @@ class WindowsADContainerContractTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.folder=Path(self.temp.name);module=self.folder/'ActiveDirectory';module.mkdir()
         (module/'ActiveDirectory.psm1').write_text(MOCK,encoding='utf-8-sig')
+        # Only the fake-directory test copy reports exception details; production stays sanitized.
+        self.scripts=self.folder/'scripts';self.scripts.mkdir()
+        for filename in ('directory.ps1','Check-Desktop.ps1','ad-scope.ps1','department-groups.ps1'):
+            shutil.copy2(BASE/'windows'/filename,self.scripts/filename)
+        adapter=self.scripts/'directory.ps1'
+        adapter.write_text(adapter.read_text(encoding='utf-8-sig').replace("error='AD_OPERATION_FAILED'","error='AD_OPERATION_FAILED';diagnostic=$_.Exception.Message;location=$_.ScriptStackTrace"),encoding='utf-8-sig')
         self.writes=self.folder/'writes.txt'
         self.env=dict(os.environ,PSModulePath=str(self.folder)+os.pathsep+os.environ.get('PSModulePath',''),MK_TEST_BASE='CN=Users,DC=example,DC=test',MK_TEST_CLASS='container',MK_TEST_USER='normal',MK_TEST_WRITES=str(self.writes))
 
     def run_script(self,action='list',script='directory.ps1',**values):
         data=dict(action=action,server='dc.example.test',ou=self.env['MK_TEST_BASE'],upnSuffix='example.test',**values)
-        result=subprocess.run(['powershell.exe','-NoLogo','-NoProfile','-NonInteractive','-File',str(BASE/'windows'/script)],input=json.dumps(data),capture_output=True,text=True,encoding='utf-8',env=self.env,timeout=30)
+        result=subprocess.run(['powershell.exe','-NoLogo','-NoProfile','-NonInteractive','-File',str(self.scripts/script)],input=json.dumps(data),capture_output=True,text=True,encoding='utf-8',env=self.env,timeout=30)
         try:body=json.loads(result.stdout.lstrip('\ufeff'))
         except ValueError:self.fail('Invalid PowerShell adapter response: '+result.stdout+' '+result.stderr)
         return result.returncode,body
