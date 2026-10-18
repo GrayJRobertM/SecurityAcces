@@ -163,6 +163,8 @@ class AccountExpiry:
         self._alerts()
 
     def start(self):
+        if self.thread and self.thread.is_alive():return
+        self.cancel.clear()
         def run():
             while not self.cancel.is_set():
                 try:self.tick()

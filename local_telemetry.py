@@ -50,6 +50,9 @@ class LocalCollector:
         self.thread = threading.Thread(target=self.run, daemon=True)
 
     def start(self):
+        if self.thread.is_alive():return
+        self.cancel.clear()
+        self.thread=threading.Thread(target=self.run,daemon=True)
         self.thread.start()
 
     def stop(self):

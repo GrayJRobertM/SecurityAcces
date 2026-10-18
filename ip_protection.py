@@ -223,6 +223,7 @@ class IPProtection:
                 rules=self.backend('list',instance=c['instance'])['rules']
                 verified={r['rule']:r for r in rules}
             for row in live:
+                if self.cancel.is_set():return
                 reason=('lista blanca' if self.allowed(address(row['ip']),white) else
                         'retirada solicitada' if row['reason'].startswith('retirar: ') else
                         'vencimiento' if row['expires']<=now else
@@ -250,6 +251,7 @@ class IPProtection:
                         previous=grouped.get(canonical,(0,''))
                         grouped[canonical]=(previous[0]+count,user)
                     for ip,(count,user) in grouped.items():
+                        if self.cancel.is_set():return
                         if count<c['threshold'] or db.execute("SELECT 1 FROM blocks WHERE ip=? AND status IN ('pending','blocked','error')",(ip,)).fetchone():continue
                         row=self._pending(db,ip,count,user,'automático','sistema',c)
                         db.commit()
@@ -262,6 +264,7 @@ class IPProtection:
             c=db.execute('SELECT * FROM config').fetchone()
             if not c['alerts']:return
             for row in list(db.execute("SELECT * FROM notifications WHERE status='pending' AND next_try<=? ORDER BY created LIMIT 5",(self.clock(),))):
+                if self.cancel.is_set():break
                 try:
                     if not self.demo:self.backend('alert',ip=row['ip'],failures=row['failures'],at=row['created'],expires=row['expires'],event_id=row['id'])
                     db.execute("UPDATE notifications SET status=?,attempts=attempts+1,error='' WHERE id=?",('simulated' if self.demo else 'sent',row['id']))
@@ -275,6 +278,8 @@ class IPProtection:
         except Exception:return dict(available=False,message='Monitor no disponible. Revisa config.json, token.dpapi y permisos del propietario.')
 
     def start(self):
+        if self.thread and self.thread.is_alive():return
+        self.cancel.clear()
         def run():
             while not self.cancel.is_set():
                 try:self.tick()

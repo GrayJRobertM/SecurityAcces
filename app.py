@@ -27,6 +27,7 @@ from telemetry import install as install_telemetry, register as register_telemet
 from access_map import register as register_access_map
 from ip_protection import IPProtection, register as register_ip_protection
 from account_expiry import AccountExpiry, register as register_account_expiry
+from updater import register as register_updates
 from user_sync import install as install_user_sync, register as register_user_sync, remember as remember_user_password
 
 from authentication import install as install_auth, register as register_operators, account_hash, reauthenticate, current_actor
@@ -195,7 +196,7 @@ def create_app(overrides=None):
         row = db().execute('SELECT expires,actor FROM sessions WHERE token=?', (session.get('auth',''),)).fetchone()
         active=bool(row and row[0]>time.time() and account_hash(db(),row['actor']))
         return jsonify(csrf=session['csrf'], authenticated=active, mode=app.config['MODE'], desktop=bool(app.config.get('DESKTOP')),
-                       setup=bool(db().execute('SELECT 1 FROM admin').fetchone()),username=row['actor'] if active else '',shared=bool(request.environ.get('metakampo.shared_client')))
+                       setup=bool(db().execute('SELECT 1 FROM admin').fetchone()),username=row['actor'] if active else '',shared=bool(request.environ.get('metakampo.shared_client')),updating=bool(app.config.get('UPDATE_MANAGER') and app.config['UPDATE_MANAGER'].draining))
 
     @app.post('/api/login')
     def login():
@@ -487,6 +488,7 @@ def create_app(overrides=None):
     expiry = AccountExpiry(database,expiry_directory,guard.backend,demo=app.config["MODE"]=="demo")
     app.account_expiry = expiry
     register_account_expiry(app,expiry,db,throttled)
+    register_updates(app,db,audit,throttled)
     app.db_path = database
     return app
 

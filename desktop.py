@@ -22,7 +22,7 @@ from app import create_app
 from windows_native import dpapi, machine_identity, restrict_folder
 
 BASE = Path(__file__).parent
-VERSION = '1.7.0'
+from update_trust import VERSION
 
 
 def validate_settings(data):
@@ -62,6 +62,7 @@ class Store:
         restrict_folder(self.folder, self.identity['sid'])
         self.file = self.folder / 'installation.dpapi'
         self.values = None
+        self.updater = None
         if self.file.exists():
             self.values = json.loads(dpapi(self.file.read_bytes(), decrypt=True))
             if self.values['identity'] != self.identity:
@@ -86,7 +87,7 @@ class Store:
         os.environ['FK_DESKTOP'] = '1'
         try:
             return create_app(dict(MODE=settings['mode'], DATA_DIR=str(self.folder / settings['mode']),
-                                   DESKTOP=True, GUARD_DIR=str(self.folder), SESSION_COOKIE_SECURE=False, TRUSTED_HOSTS=['127.0.0.1']))
+                                   DESKTOP=True, UPDATE_MANAGER=self.updater, GUARD_DIR=str(self.folder), SESSION_COOKIE_SECURE=False, TRUSTED_HOSTS=['127.0.0.1']))
         finally:
             os.environ.pop('FK_MASTER_KEY', None)
 
@@ -238,10 +239,11 @@ def main():
             app = reopened.application()
             assert app.config['DESKTOP'] and app.db_path.exists()
             for filename in ('desktop-setup.html', 'app.js', 'icons.svg', 'fonts/InterVariable.woff2',
-                             'access-map.js','access-map.css','maps/world.svg'):
+                             'access-map.js','access-map.css','maps/world.svg','updater.js'):
                 assert (BASE / 'static' / filename).exists(), filename
             assert (BASE / 'windows' / 'Read-LocalLogons.ps1').exists()
             assert (BASE / 'windows' / 'department-groups.ps1').exists()
+            assert (BASE / 'windows' / 'Apply-Update.ps1').exists()
             from access_map import Locator
             locator=Locator(BASE / 'geodata' / 'city.mmdb')
             try:
@@ -263,6 +265,8 @@ def main():
         return
     if os.name != 'nt':
         raise SystemExit('La aplicación instalable está diseñada para Windows Server x64.')
+    from updater import maintenance_requested
+    if maintenance_requested():raise OSError('Metakampo se está actualizando. Espera y vuelve a abrirlo.')
     import winreg
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r'SOFTWARE\Microsoft\Windows NT\CurrentVersion') as key:
         installation_type=winreg.QueryValueEx(key,'InstallationType')[0]
@@ -274,6 +278,9 @@ def main():
     temporary = tempfile.TemporaryDirectory(prefix='fk-gui-smoke-') if (args.gui_smoke_test or args.shared_smoke_host) else None
     folder = Path(temporary.name) if temporary else Path(os.environ['LOCALAPPDATA']) / 'Freshkampo' / 'Access'
     store = Store(folder)
+    from updater import UpdateManager
+    updater=UpdateManager(folder,root=Path(sys.executable).parent if getattr(sys,'frozen',False) and not temporary else None)
+    store.updater=updater
     lockfile = open(folder / 'desktop.lock', 'a+b')
     if not lockfile.tell():
         lockfile.write(b'0')
@@ -321,6 +328,28 @@ def main():
                             OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
     window = webview.create_window('Metakampo Access · '+('Servidor compartido — mantener abierto' if shared else 'Este servidor'), url=url,
                                   width=1360, height=900, min_size=(900, 650), text_select=True)
+    def prepare_update():
+        import time
+        app=gate.application
+        if any(t.is_alive() for t in getattr(app,'sync_threads',[])):
+            from updater import UpdateError
+            raise UpdateError('Hay una importación en curso. Espera a que termine antes de actualizar.')
+        for worker in collectors:worker.stop()
+        until=time.monotonic()+65
+        for worker in collectors:
+            remaining=max(0,until-time.monotonic())
+            worker.thread.join(timeout=remaining)
+            if worker.thread.is_alive():
+                from updater import UpdateError
+                raise UpdateError('Una tarea Windows sigue activa. No se instalará hasta que termine.')
+    def resume_update():
+        for worker in collectors:
+            worker.thread.join(timeout=50)
+            if not worker.thread.is_alive():worker.start()
+    updater.prepare=prepare_update
+    updater.resume=resume_update
+    updater.close=lambda:window.destroy()
+    if not temporary:updater.start_auto()
     smoke_errors = []
     if args.gui_smoke_test:
         def check_window():
@@ -338,6 +367,7 @@ def main():
         webview.start(gui='edgechromium', private_mode=True, debug=False,
                       storage_path=str(folder / 'webview'))
     finally:
+        updater.stop_auto()
         for collector in collectors:
             collector.stop()
         if shared:shared.stop()

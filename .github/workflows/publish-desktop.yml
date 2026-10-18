@@ -1,0 +1,95 @@
+name: Publish verified desktop update
+on:
+  push:
+    tags: ['metakampo-v*']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.lock.txt
+      - name: Find successful build for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p release
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/windows-desktop.yml/runs?head_sha=$EXPECTED_SHA&status=success&per_page=20" > /tmp/build-runs.json
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          runs=json.loads(Path('/tmp/build-runs.json').read_text())['workflow_runs']
+          candidates=[r for r in runs if r['head_sha']==os.environ['EXPECTED_SHA'] and r['head_branch']=='codex/metakampo-desktop' and r['conclusion']=='success']
+          if not candidates:raise SystemExit('No successful Windows build for this exact source commit')
+          with open(os.environ['GITHUB_ENV'],'a') as out:out.write('BUILD_RUN='+str(candidates[0]['id'])+'\n')
+          PY
+      - name: Download validated build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$BUILD_RUN" --name Metakampo-Access-Windows-x64 --dir release
+      - name: Sign stable release metadata
+        env:
+          METAKAMPO_UPDATE_SIGNING_KEY: ${{ secrets.METAKAMPO_UPDATE_SIGNING_KEY }}
+        run: python packaging/sign-update.py release --tag "$GITHUB_REF_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Metakampo-Signed-Update
+          path: release/*
+          retention-days: 14
+  upgrade:
+    needs: sign
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-desktop.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: Metakampo-Signed-Update
+          path: release
+      - name: Fetch previous release or bootstrap pilot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path previous -Force | Out-Null
+          gh release download --repo $env:GITHUB_REPOSITORY --pattern Metakampo-Access-Setup-x64.exe --dir previous
+          if ($LASTEXITCODE -ne 0) {
+            gh run download 39143312789 --repo $env:GITHUB_REPOSITORY --name Metakampo-Access-Windows-x64 --dir previous
+            if ($LASTEXITCODE -ne 0) { throw 'No previous installer for native upgrade test' }
+          }
+      - name: Native signed installed upgrade and DPAPI preservation
+        shell: pwsh
+        run: python packaging/test-installed-upgrade.py previous/Metakampo-Access-Setup-x64.exe release
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Metakampo-Upgrade-Verification
+          path: release/UPGRADE-SMOKE.txt
+          if-no-files-found: warn
+  publish:
+    needs: [sign, upgrade]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Metakampo-Signed-Update
+          path: release
+      - name: Publish verified update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/Metakampo-Access-Setup-x64.exe release/metakampo-update.json release/SHA256.txt --verify-tag --title "Metakampo Access ${GITHUB_REF_NAME#metakampo-v}" --notes-file RELEASE-NOTES.md

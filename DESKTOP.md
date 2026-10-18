@@ -161,3 +161,25 @@ En **Directorio de usuarios**, pulsa el **reloj — Configurar vencimiento** de 
 Instala 1.7.0 con la cuenta propietaria original y conserva configuración/datos. Para probar, utiliza una cuenta estándar de prueba, elige un vencimiento cercano, mantén abierto el propietario y comprueba estado Inactivo, auditoría y entrega Telegram. La integración real con AD/certificados y el monitor del usuario requiere piloto; CI Windows usa cuentas temporales propias y no contacta Telegram.
 
 Fuentes: [Set-LocalUser](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.localaccounts/set-localuser), [Set-ADAccountExpiration](https://learn.microsoft.com/en-us/powershell/module/activedirectory/set-adaccountexpiration).
+
+## Actualizaciones remotas · 1.8.0
+
+Instala manualmente esta versión una vez, con la misma cuenta Windows propietaria de la instalación anterior. Conserva el directorio de instalación y los datos de `%LOCALAPPDATA%\Freshkampo\Access`. Después usa **Actualizaciones → Buscar actualización → Descargar actualización → Actualizar ahora** desde **Administrar servidor Metakampo**, con el usuario propietario `admin`. Los administradores de las sesiones compartidas pueden consultar el estado, pero no ejecutar instaladores.
+
+La aplicación consulta la última versión estable de GitHub Releases de `GrayJRobertM/SecurityAcces` al iniciar y cada seis horas mientras el propietario esté abierto. Requiere salida HTTPS a GitHub y sus servidores de descarga. Nunca instala automáticamente: confirma la contraseña de Metakampo y programa una breve interrupción. Las importaciones activas impiden actualizar; las demás operaciones y monitores deben detenerse antes del cambio. Las ventanas compartidas de Metakampo se cierran voluntariamente; si alguna permanece abierta se cancela la instalación. Las sesiones RDP de Windows no se cierran.
+
+Los metadatos de versión se firman con RSA de 3072 bits y SHA-256; la clave pública está fijada en el programa. El token y la clave privada de publicación no se distribuyen. El instalador se descarga bajo `.metakampo-updates` en la carpeta de instalación, con permisos de administradores y SYSTEM. Un segundo verificador comprueba firma, versión, tamaño y SHA-256 antes de ejecutar y mantiene bloqueado el archivo contra modificaciones. La firma de estos metadatos es independiente de Authenticode: el ejecutable no tiene un certificado corporativo de firma Windows. No se omiten políticas PowerShell ni se obliga a Windows a confiar en certificados.
+
+Antes de instalar se respaldan `installation.dpapi` y las bases SQLite existentes en `update-backups` dentro de los datos del propietario. Las copias conservan los datos cifrados; necesitan el mismo equipo y la misma cuenta Windows para DPAPI. Después se comprueba la nueva versión y se ejecuta una prueba aislada; el propietario se vuelve a abrir con esa misma identidad. No se reinicia Windows automáticamente. Un resultado 3010 requiere revisión manual del reinicio pendiente.
+
+Si falla, consulta `.metakampo-updates\result.json` y el `install.log` de la subcarpeta correspondiente. Conserva la copia de seguridad. No hay reversión automática de archivos después de una instalación parcial; vuelve a abrir el propietario y, si procede, repara con un instalador verificado. Las reglas de firewall existentes persisten durante la pausa; los avisos pendientes se reintentan al abrir de nuevo el propietario.
+
+### Publicar siguientes versiones
+
+1. Cambia `VERSION` en `update_trust.py`, `packaging/version.txt` e `installer.iss`, conserva la misma clave pública y actualiza `RELEASE-NOTES.md`.
+2. Sube a `codex/metakampo-desktop` y espera una compilación Windows exitosa del mismo commit.
+3. Crea una etiqueta `metakampo-vX.Y.Z` de ese commit. `publish-desktop.yml` recupera exactamente el instalador validado, firma sus metadatos con el secreto `METAKAMPO_UPDATE_SIGNING_KEY`, prueba una actualización instalada desde la versión anterior y solo entonces publica la versión estable.
+
+La clave privada permanece en GitHub Actions. Restringe quién puede cambiar los workflows y publicar etiquetas del repositorio. Si se pierde o compromete esta clave, distribuir un nuevo anclaje de confianza requiere una instalación manual autorizada. No retires la publicación estable anterior hasta que la siguiente se haya verificado.
+
+Validación automatizada: Windows Server 2022 x64 con experiencia de escritorio. Windows Server 2019 conserva los requisitos indicados en este documento y requiere una prueba piloto en el servidor del usuario.

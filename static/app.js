@@ -4,6 +4,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 const icon = name => `<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#${name}"></use></svg>`;
 const state = {csrf:'', users:[], view:'dashboard', secretTimer:null, rdpDemo:true, desktop:false, mode:"demo", departmentSyncBusy:false};
 const pages = {
+ updates:['Actualizaciones','Mantén Metakampo al día desde este servidor.',null],
  protection:['Protección de IP','Controla intentos fallidos, bloqueos y excepciones de este servidor.',null],
  map:['Mapa de accesos','Consulta desde dónde se registran los accesos y los intentos de conexión.',null],
  dashboard:['Dashboard de uso','Accesos observados en Windows, usuarios y servidores en un solo lugar.',null],
@@ -35,6 +36,7 @@ async function openWorkspace(){
  const sessionInfo=await api('session');$('operator-name').textContent=sessionInfo.username||'admin';
  $('login-screen').hidden=true;$('workspace').hidden=false;$('page-error').hidden=true;
  await navigate('dashboard');
+ loadUpdates().catch(()=>scheduleUpdatePoll());
 }
 async function navigate(view){
  if(!pages[view])return;
@@ -52,6 +54,7 @@ async function navigate(view){
   if(view==='dashboard')await loadDashboard();
   if(view==='map')await loadAccessMap();
   if(view==='protection')await loadIPProtection();
+  if(view==='updates')await loadUpdates();
  }catch(e){error(e.message);}
 }
 async function loadPolicy(){const data=await api('policy');$('length').value=data.length;$('policy-length').textContent=data.length;$('generator-length').textContent=data.length+' caracteres';}

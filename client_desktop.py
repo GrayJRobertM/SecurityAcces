@@ -11,6 +11,8 @@ import threading
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--gui-smoke-test',action='store_true');parser.add_argument('--gui-smoke-report');args=parser.parse_args()
     if os.name!='nt':raise OSError('Este acceso requiere una sesión Windows del servidor instalado.')
+    from updater import maintenance_requested
+    if maintenance_requested():raise OSError('Metakampo se está actualizando. Espera a que termine.')
     import webview
     from waitress import create_server
     from desktop import DesktopGate
@@ -26,6 +28,16 @@ def main():
     webview.settings.update(ALLOW_DOWNLOADS=True,ALLOW_FILE_URLS=False,OPEN_EXTERNAL_LINKS_IN_BROWSER=False,REMOTE_DEBUGGING_PORT=None)
     window=webview.create_window('Metakampo Access · Sesión del servidor',url='http://'+gate.host+'/desktop-open?token='+gate.bootstrap,width=1360,height=900,min_size=(900,650),text_select=True)
     errors=[]
+    finished=threading.Event()
+    def follow_owner():
+        while not finished.wait(2):
+            try:
+                import base64,json
+                response=client.request(dict(method='GET',path='/api/session',headers={},body=''))
+                if json.loads(base64.b64decode(response['body'])).get('updating'):
+                    window.destroy();return
+            except Exception:pass
+    threading.Thread(target=follow_owner,daemon=True,name='metakampo-client-maintenance').start()
     if args.gui_smoke_test:
         def check():
             try:
@@ -35,7 +47,7 @@ def main():
             finally:window.destroy()
         window.events.loaded+=check
     try:webview.start(gui='edgechromium',private_mode=True,debug=False,storage_path=str(Path(temporary.name)/'webview'))
-    finally:server.close();temporary.cleanup()
+    finally:finished.set();server.close();temporary.cleanup()
     if errors:raise RuntimeError(errors[0])
 
 

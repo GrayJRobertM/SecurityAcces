@@ -31,6 +31,10 @@ jobs:
         env:
           FK_NATIVE_IP_TESTS: "1"
         run: python -m unittest discover -s tests -p test_ip_protection.py -k NativeIPTests -v
+      - name: Native update staging and invalid signature refusal
+        env:
+          FK_NATIVE_UPDATE_TESTS: "1"
+        run: python -m unittest discover -s tests -p test_updater.py -k NativeUpdateTests -v
       - name: Tests with offline geolocation
         run: python -m unittest discover -s tests -v
       - name: Parse every PowerShell script
