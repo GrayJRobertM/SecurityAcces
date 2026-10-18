@@ -68,10 +68,10 @@ class SignatureTests(unittest.TestCase):
  def test_busy_request_and_backup_preserve_sqlite_and_cipher_bytes(self):
   with tempfile.TemporaryDirectory() as folder:
    root=Path(folder).resolve();(root/'demo').mkdir();(root/'installation.dpapi').write_bytes(b'ciphertext-only')
-   with sqlite3.connect(root/'demo/access.sqlite3') as db:db.execute('CREATE TABLE sample(value BLOB)');db.execute('INSERT INTO sample VALUES(?)',(b'encrypted-secret',))
+   with connection(root/'demo/access.sqlite3') as db:db.execute('CREATE TABLE sample(value BLOB)');db.execute('INSERT INTO sample VALUES(?)',(b'encrypted-secret',))
    target=u.backup_store(root);second=u.backup_store(root);self.assertNotEqual(target,second)
    self.assertEqual((target/'installation.dpapi').read_bytes(),b'ciphertext-only')
-   with sqlite3.connect(target/'demo/access.sqlite3') as db:self.assertEqual(db.execute('SELECT value FROM sample').fetchone()[0],b'encrypted-secret')
+   with connection(target/'demo/access.sqlite3') as db:self.assertEqual(db.execute('SELECT value FROM sample').fetchone()[0],b'encrypted-secret')
    manager=u.UpdateManager(root);self.assertTrue(manager.enter());manager.draining=True;self.assertFalse(manager.enter());manager.leave();self.assertEqual(manager.active,0)
 
 class UpdateAPITests(unittest.TestCase):

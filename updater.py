@@ -1,6 +1,7 @@
 """Owner-only, pinned signed updates. No remote code runs before verification."""
 import base64
 import ctypes
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -145,7 +146,7 @@ def backup_store(folder):
         no_reparse(path)
         output=target/path.relative_to(folder);output.parent.mkdir(parents=True,exist_ok=True)
         if path.suffix=='.sqlite3':
-            with sqlite3.connect(path,timeout=15) as source,sqlite3.connect(output) as dest:source.backup(dest)
+            with closing(sqlite3.connect(path,timeout=15)) as source,closing(sqlite3.connect(output)) as dest:source.backup(dest)
         else:shutil.copy2(path,output)
     return target
 
