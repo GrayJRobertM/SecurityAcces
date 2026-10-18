@@ -344,6 +344,7 @@ def main():
                 raise UpdateError('Una tarea Windows sigue activa. No se instalará hasta que termine.')
     def resume_update():
         for worker in collectors:
+            if not worker.cancel.is_set():continue
             worker.thread.join(timeout=50)
             if not worker.thread.is_alive():worker.start()
     updater.prepare=prepare_update
