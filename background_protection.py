@@ -20,11 +20,18 @@ def folder():
     return Path(os.environ['ProgramData'])/'Metakampo'/'Access'/'Protection'
 
 
+def secure_paths(action,**values):
+    result=subprocess.run([local_powershell_path(),'-NoProfile','-NonInteractive','-File',str(Path(__file__).parent/'windows/Prepare-Protection.ps1')],input=json.dumps(dict(action=action,**values)),text=True,encoding='utf-8',capture_output=True,timeout=90,creationflags=subprocess.CREATE_NO_WINDOW)
+    try:valid=json.loads(result.stdout.lstrip('\ufeff')).get('ok') is True
+    except ValueError:valid=False
+    if result.returncode or not valid:raise OSError('Windows no confirmó permisos privados de la protección. Revisa propietario y permisos de instalación.')
+
+
 def prepare_folder():
     root=folder()
     from updater import no_reparse
-    no_reparse(root);root.mkdir(parents=True,exist_ok=True)
-    subprocess.run(['icacls.exe',str(root),'/inheritance:r','/grant:r','*S-1-5-18:(OI)(CI)F','*S-1-5-32-544:(OI)(CI)F'],check=True,capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
+    no_reparse(root)
+    secure_paths('data')
     return root
 
 
@@ -106,6 +113,7 @@ def start_worker():
 
 
 def install_task():
+    secure_paths('code',root=str(Path(sys.executable).resolve().parent))
     root=prepare_folder()
     # XML escaping is handled by ElementTree; no command interpolation or user script paths.
     import xml.etree.ElementTree as E
