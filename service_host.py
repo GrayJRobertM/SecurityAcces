@@ -45,6 +45,7 @@ def stop():
     import win32serviceutil,win32service
     state=status()
     if state in ('unconfigured','stopped'):return
+    if not binding():raise OSError('Existe un servicio con ese nombre sin registro propietario de Metakampo. No se modificó.')
     if state!='stopping':win32serviceutil.StopService(NAME)
     win32serviceutil.WaitForServiceStatus(NAME,win32service.SERVICE_STOPPED,120)
 
@@ -72,7 +73,7 @@ def repair():
 
 
 def remove():
-    if status()=='unconfigured':return
+    if status()=='unconfigured' or not binding():return
     stop()
     import win32service,winreg
     scm=win32service.OpenSCManager(None,None,win32service.SC_MANAGER_CONNECT)
@@ -89,6 +90,9 @@ def remove():
 def install(store,username,password,executable=None):
     """Password goes directly to Windows SCM, never to files/arguments/application config."""
     import win32service,win32security
+    config=binding()
+    if status()!='unconfigured' and not config:raise OSError('Ya existe un servicio sin registro propietario de Metakampo. No se sustituirá.')
+    if config and (config['sid']!=store.identity['sid'] or Path(config['folder']).resolve()!=store.folder.resolve()):raise OSError('El servicio pertenece a otra bóveda o identidad Windows.')
     account,domain,_=win32security.LookupAccountSid(None,win32security.ConvertStringSidToSid(store.identity['sid']))
     expected=domain+'\\'+account
     if username.casefold()!=expected.casefold():raise OSError('Usa la cuenta Windows propietaria original: '+expected)
@@ -160,6 +164,10 @@ def activate(launch=False):
     from desktop import Store,main
     config=binding()
     if config:
+        if status()=='unconfigured':
+            from windows_native import current_sid
+            if current_sid()!=config['sid']:raise OSError('Restaura el servicio con la cuenta Windows propietaria original.')
+            prompt_credentials(Store(config['folder']))
         try:start()
         except Exception as exc:
             if getattr(exc,'winerror',0)!=1069:raise
@@ -275,6 +283,7 @@ def dispatch():
         _svc_name_=NAME;_svc_display_name_='Metakampo Access'
         def __init__(self,args):super().__init__(args);self.stop_event=threading.Event()
         def SvcStop(self):self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING,waitHint=180000);self.stop_event.set()
+        def SvcShutdown(self):self.SvcStop()
         def SvcDoRun(self):
             try:
                 with owner_profile():run_host(self.stop_event,lambda:self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING,waitHint=180000))
