@@ -11,7 +11,7 @@ from service_host import install,remove,start,stop,status,NAME
 from shared_desktop import PipeClient
 from werkzeug.security import generate_password_hash
 
-exe=Path(sys.argv[1]).resolve();report=Path(sys.argv[2]).resolve()
+exe=Path(sys.argv[1]).resolve();report=Path(sys.argv[2]).resolve();profile_only='--profile-only' in sys.argv
 username='mksvc'+uuid.uuid4().hex[:10];password=generate_password(30);admin_password=generate_password(24)
 folder=Path(os.environ['ProgramData'])/('MetakampoServicePilot-'+uuid.uuid4().hex)
 token=None;profile=None;created=False;identifier=str(uuid.uuid4());secret=generate_password(24)
@@ -21,24 +21,37 @@ try:
     group=win32security.LookupAccountSid(None,win32security.ConvertStringSidToSid('S-1-5-32-544'))[0]
     account=os.environ['COMPUTERNAME']+'\\'+username
     win32net.NetLocalGroupAddMembers(None,group,3,[dict(domainandname=account)])
-    token=win32security.LogonUser(username,'.',password,win32security.LOGON32_LOGON_INTERACTIVE,win32security.LOGON32_PROVIDER_DEFAULT)
+    sid_value=win32security.LookupAccountName(None,account)[0]
+    policy=win32security.LsaOpenPolicy(None,win32security.POLICY_CREATE_ACCOUNT|win32security.POLICY_LOOKUP_NAMES)
+    try:win32security.LsaAddAccountRights(policy,sid_value,('SeServiceLogonRight',))
+    finally:win32security.LsaClose(policy)
+    token=win32security.LogonUser(username,'.',password,win32security.LOGON32_LOGON_SERVICE,win32security.LOGON32_PROVIDER_DEFAULT)
     process_token=win32security.OpenProcessToken(win32api.GetCurrentProcess(),win32security.TOKEN_ALL_ACCESS)
     win32security.AdjustTokenPrivileges(process_token,False,[(win32security.LookupPrivilegeValue(None,n),win32security.SE_PRIVILEGE_ENABLED) for n in ('SeBackupPrivilege','SeRestorePrivilege')]);process_token.Close()
-    if win32security.GetTokenInformation(token,win32security.TokenElevationType)==3:
-        linked=win32security.GetTokenInformation(token,win32security.TokenLinkedToken);token.Close();token=linked
     profile=win32profile.LoadUserProfile(token,dict(UserName=username,Flags=1))
     folder.mkdir()
     from windows_native import restrict_folder
     sid=win32security.ConvertSidToStringSid(win32security.GetTokenInformation(token,win32security.TokenUser)[0]);restrict_folder(folder,sid)
+    interactive=win32security.LogonUser(username,'.',password,win32security.LOGON32_LOGON_INTERACTIVE,win32security.LOGON32_PROVIDER_DEFAULT)
+    win32security.ImpersonateLoggedOnUser(interactive)
+    try:
+        store=Store(folder);store.save(validate_settings(dict(mode='local',store='CurrentUser')))
+    finally:win32security.RevertToSelf();interactive.Close()
     win32security.ImpersonateLoggedOnUser(token)
     try:
-        store=Store(folder);store.save(validate_settings(dict(mode='local',store='CurrentUser')));app=store.application()
+        # Interactive-user protection must decrypt under a service logon of the same SID.
+        assert Store(folder).values==store.values
+        app=store.application()
         with connection(app.db_path) as db:
             db.execute('INSERT INTO admin VALUES(1,?)',(generate_password_hash(admin_password),))
             db.execute('INSERT INTO vault(id,title,username,secret) VALUES(?,?,?,?)',(identifier,'Service pilot','synthetic',seal(base64.b64decode(store.values['key']),identifier,secret)))
         protected=(folder/'installation.dpapi').read_bytes();key=store.values['key']
     finally:win32security.RevertToSelf()
     win32profile.UnloadUserProfile(token,profile);profile=None
+    if profile_only:
+        report.write_text('Interactive CurrentUser DPAPI profile decrypts under service logon for the same isolated owner SID. No interactive owner process required.\n')
+        print('Service profile/interactive DPAPI preflight passed')
+        raise SystemExit(0)
     win32security.ImpersonateLoggedOnUser(token)
     try:install(store,account,password,executable=exe)
     finally:win32security.RevertToSelf();token.Close();token=None
