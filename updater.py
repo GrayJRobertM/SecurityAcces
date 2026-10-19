@@ -270,7 +270,7 @@ class UpdateManager:
                     self.condition.wait(min(remaining,1))
             stopped=True;self.prepare()
             saved=backup_store(self.folder)
-            plan=dict(schema=1,version=manifest['version'],owner_pid=os.getpid(),restart_shared=True,interactive=True)
+            plan=dict(schema=1,version=manifest['version'],owner_pid=os.getpid(),restart_shared=True,interactive=not getattr(self,'service_host',False),service_host=bool(getattr(self,'service_host',False)))
             (self.stage/'plan.json').write_text(json.dumps(plan),encoding='utf-8')
             process=subprocess.Popen([local_powershell_path(),'-NoLogo','-NoProfile','-NonInteractive','-File',str(self.stage/'Apply-Update.ps1'),'-Plan',str(self.stage/'plan.json')],creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             until=time.monotonic()+20
@@ -311,14 +311,22 @@ def register(app,db,audit,throttled):
     @app.teardown_request
     def release_update_count(_):
         if manager and g.pop('update_counted',False):manager.leave()
+    def owner_allowed():
+        if not manager or not app.config.get('DESKTOP') or current_actor()!='admin':return False
+        if not request.environ.get('metakampo.shared_client'):return True
+        if not getattr(manager,'service_host',False):return False
+        scope=request.environ.get('metakampo.impersonate')
+        if not scope:return False
+        from windows_native import current_sid
+        with scope():return current_sid()==manager.owner_sid
     @app.get('/api/updates/status')
     def update_status():
         result=manager.state() if manager else dict(installed=VERSION,phase='unavailable',message='El actualizador funciona desde la ventana instalada del propietario.',latest=None,received=0,can_install=False,draining=False,checked_at=None,last_result=None,source='https://github.com/'+REPOSITORY+'/releases')
-        result['owner']=bool(manager and app.config.get('DESKTOP') and not request.environ.get('metakampo.shared_client') and current_actor()=='admin')
+        result['owner']=owner_allowed()
         return jsonify(result)
     @app.post('/api/updates/<action>')
     def update_action(action):
-        if not manager or not app.config.get('DESKTOP') or request.environ.get('metakampo.shared_client') or current_actor()!='admin':return jsonify(error='Abre Administrar servidor Metakampo e inicia sesión como admin para actualizar.'),403
+        if not owner_allowed():return jsonify(error='Inicia sesión como admin desde la sesión Windows propietaria original para actualizar.'),403
         if throttled('updates',20):return jsonify(error='Demasiadas solicitudes de actualización. Espera unos minutos.'),429
         data=request.get_json(silent=True) or {}
         if not isinstance(data,dict):raise ValueError('Solicitud inválida.')

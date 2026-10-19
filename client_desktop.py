@@ -20,7 +20,12 @@ def main():
     expected=Path(sys.executable).parent/'MetakampoAccess.exe' if getattr(sys,'frozen',False) else Path(sys.executable)
     client=PipeClient(expected)
     # Check the installed owner process before opening a login window.
-    client.request(dict(method='GET',path='/api/session',headers={},body=''))
+    if args.gui_smoke_test:
+        client.request(dict(method='GET',path='/api/session',headers={},body=''))
+    else:
+        from service_host import binding,status,bootstrap,wait_for_pipe
+        if not binding() or status() not in ('running','starting'):bootstrap(expected)
+        wait_for_pipe(client)
     gate=DesktopGate(LocalProxy(client));server=create_server(gate,host='127.0.0.1',port=0,threads=4,clear_untrusted_proxy_headers=True)
     gate.host='127.0.0.1:'+str(server.effective_port)
     threading.Thread(target=server.run,daemon=True).start()

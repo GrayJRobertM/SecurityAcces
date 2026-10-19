@@ -1,5 +1,12 @@
 # Cambios
 
+## 1.10.0 — Servicio Windows y acceso único
+
+- Servicio automático bajo identidad propietaria original y perfil DPAPI CurrentUser conservado.
+- Activación única con diálogo Windows; credencial custodiada por SCM, sin archivos ni argumentos.
+- Cliente del escritorio sin ventana propietaria; métricas y vencimientos en segundo plano.
+- Actualizaciones firmadas desde cliente autorizado por SID propietario y credencial del gestor; parada/reinicio del servicio en instalador.
+
 ## 1.9.1 — Contenedores de usuarios Active Directory
 
 - Admite bases CN=Users y OU sin mover cuentas; valida el tipo de objeto en Windows.

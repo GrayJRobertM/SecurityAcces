@@ -194,7 +194,7 @@ class PipeClient:
         if not self.name.startswith('\\\\.\\pipe\\'):raise OSError('Solo se permite comunicación en este servidor.')
         k.WaitNamedPipeW(self.name,3000)
         pipe=k.CreateFileW(self.name,CLIENT_RIGHTS,0,None,3,0x120000,None) # SQOS present + SecurityImpersonation.
-        if pipe==ctypes.c_void_p(-1).value:raise OSError('El propietario debe abrir Administrar servidor Metakampo en este mismo servidor.')
+        if pipe==ctypes.c_void_p(-1).value:raise OSError('No se pudo conectar con el servicio local Metakampo. Código Windows '+str(ctypes.get_last_error())+'. Revisa el estado del servicio y sus credenciales.')
         thread_handle=k.OpenThread(1,False,threading.get_native_id());timer=threading.Timer(90,lambda:k.CancelSynchronousIo(thread_handle));timer.daemon=True;timer.start()
         try:
             pid=W.ULONG();_check(k.GetNamedPipeServerProcessId(pipe,ctypes.byref(pid)))

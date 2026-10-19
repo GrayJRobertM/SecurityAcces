@@ -1,4 +1,4 @@
-#define AppVersion "1.9.1"
+#define AppVersion "1.10.0"
 [Setup]
 AppId={{72FBC267-2574-4268-AB77-36B8374BCA7D}
 AppName=Metakampo Access
@@ -33,7 +33,7 @@ Source: "..\DESKTOP.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Metakampo Access"; Filename: "{app}\MetakampoClient.exe"
-Name: "{group}\Administrar servidor Metakampo"; Filename: "{app}\MetakampoAccess.exe"; Parameters: "--shared-host"
+Name: "{group}\Administrar servidor Metakampo"; Filename: "{app}\MetakampoClient.exe"
 Name: "{group}\Configurar Metakampo Access"; Filename: "{app}\MetakampoAccess.exe"; Parameters: "--configure"
 Name: "{commondesktop}\Metakampo Access"; Filename: "{app}\MetakampoClient.exe"
 
@@ -45,9 +45,10 @@ Type: files; Name: "{commondesktop}\Freshkampo Access.lnk"
 
 [Run]
 Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando el motor de escritorio Microsoft WebView2..."; Flags: waituntilterminated
-Filename: "{app}\MetakampoAccess.exe"; Parameters: "--shared-host"; Description: "Abrir el servidor compartido Metakampo"; Flags: shellexec nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\MetakampoClient.exe"; Description: "Abrir Metakampo Access"; Flags: shellexec nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
+Filename: "{app}\MetakampoAccess.exe"; Parameters: "--remove-service"; Flags: runhidden waituntilterminated
 Filename: "{app}\MetakampoAccess.exe"; Parameters: "--remove-protection"; Flags: runhidden waituntilterminated
 
 [Code]
@@ -57,12 +58,21 @@ begin
   if CurStep = ssPostInstall then
     if (not Exec(ExpandConstant('{app}\MetakampoAccess.exe'), '--install-protection', '', SW_HIDE, ewWaitUntilTerminated, Code)) or (Code <> 0) then
       RaiseException('Windows no registró o inició la protección en segundo plano. Revisa el registro y repara la instalación.');
+  if CurStep = ssPostInstall then
+    if (not Exec(ExpandConstant('{app}\MetakampoAccess.exe'), '--repair-service', '', SW_HIDE, ewWaitUntilTerminated, Code)) or (Code <> 0) then
+      RaiseException('Windows no pudo reiniciar el servicio Metakampo. Revisa sus credenciales y el registro.');
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var Code: Integer;
 begin
   Result := '';
+  if RegKeyExists(HKLM64, 'SOFTWARE\Metakampo\AccessService') and FileExists(ExpandConstant('{app}\MetakampoAccess.exe')) then
+    if (not Exec(ExpandConstant('{app}\MetakampoAccess.exe'), '--stop-service', '', SW_HIDE, ewWaitUntilTerminated, Code)) or (Code <> 0) then
+    begin
+      Result := 'No se detuvo el servicio Metakampo. Espera a que terminen sus operaciones antes de actualizar.';
+      Exit;
+    end;
   if FileExists(ExpandConstant('{commonappdata}\Metakampo\Access\Protection\worker.lock')) and FileExists(ExpandConstant('{app}\MetakampoAccess.exe')) then
     if (not Exec(ExpandConstant('{app}\MetakampoAccess.exe'), '--stop-protection', '', SW_HIDE, ewWaitUntilTerminated, Code)) or (Code <> 0) then
       Result := 'No se detuvo la protección de Metakampo. Cierra sus tareas pendientes antes de actualizar.';

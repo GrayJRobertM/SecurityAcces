@@ -97,6 +97,8 @@ jobs:
           Get-FileHash $installer -Algorithm SHA256 | Format-List | Out-File dist\installer\SHA256.txt -Encoding utf8
       - name: Verify installed protection survives owner window closure
         run: python packaging/verify-background.py C:\FreshkampoPilot\MetakampoAccess.exe dist/installer/BACKGROUND-SMOKE.txt
+      - name: Verify installed automatic service with isolated owner and DPAPI
+        run: python packaging/verify-service.py C:\FreshkampoPilot\MetakampoAccess.exe dist/installer/SERVICE-SMOKE.txt
       - uses: actions/upload-artifact@v4
         with:
           name: Metakampo-Access-Windows-x64

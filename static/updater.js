@@ -18,7 +18,7 @@ async function loadUpdates(){
  $('update-download').disabled=!owner||!data.can_install||running;
  $('update-download').setAttribute('aria-busy',String(data.phase==='downloading'));
  $('update-apply').hidden=data.phase!=='ready';$('update-apply').disabled=!owner||!data.can_install;
- $('update-owner-note').textContent=!owner?'La instalación se gestiona desde Administrar servidor Metakampo, iniciando sesión como admin.':!data.can_install?'Esta vista permite consultar versiones. Para instalar, abre la aplicación instalada en Windows.':'Solo se instalarán paquetes firmados del repositorio oficial. Confirma cuando puedas interrumpir temporalmente Metakampo.';
+ $('update-owner-note').textContent=!owner?'Para instalar, inicia sesión como admin en Metakampo Access desde la cuenta Windows propietaria original.':!data.can_install?'Esta vista permite consultar versiones. Para instalar, abre la aplicación instalada en Windows.':'Solo se instalarán paquetes firmados del repositorio oficial. Confirma cuando puedas interrumpir temporalmente Metakampo.';
  const transfer=data.phase==='downloading';for(const id of ['update-progress','update-progress-label','update-transfer'])$(id).hidden=!transfer;
  if(transfer&&data.latest){$('update-progress').value=Math.min(100,100*data.received/data.latest.size);$('update-transfer').textContent=`${(data.received/1048576).toFixed(1)} de ${(data.latest.size/1048576).toFixed(1)} MB`;}
  $('update-notice').hidden=!data.latest||['preparing','installing'].includes(data.phase);

@@ -27,7 +27,7 @@ try:
  installation=(folder/'installation.dpapi').read_bytes()
  exe=root/'MetakampoAccess.exe'
  old_version=subprocess.check_output([local_powershell_path(),'-NoProfile','-NonInteractive','-Command',"(Get-Item -LiteralPath 'C:\MetakampoUpgradePilot\MetakampoAccess.exe').VersionInfo.ProductVersion"],text=True).strip()
- owner=subprocess.Popen([str(exe),'--shared-host'])
+ owner=subprocess.Popen([str(exe),'--legacy-host' if tuple(map(int,old_version.split('.')[:3]))>=(1,10,0) else '--shared-host'])
  def ready(timeout=60):
   until=time.monotonic()+timeout
   while time.monotonic()<until:
@@ -45,7 +45,7 @@ try:
  if (Path(os.environ['ProgramData'])/'Metakampo/Access/Protection/worker.lock').exists():
   subprocess.run([str(exe),'--stop-protection'],check=True,timeout=90)
  stage=manager.stage
- (stage/'plan.json').write_text(json.dumps(dict(schema=1,version=manifest['version'],owner_pid=owner.pid,restart_shared=True,interactive=False)))
+ (stage/'plan.json').write_text(json.dumps(dict(schema=1,version=manifest['version'],owner_pid=owner.pid,restart_shared=True,interactive=False,legacy_pilot=True)))
  helper=subprocess.Popen([local_powershell_path(),'-NoProfile','-NonInteractive','-File',str(stage/'Apply-Update.ps1'),'-Plan',str(stage/'plan.json')])
  until=time.monotonic()+30
  while not (stage/'ready.json').exists():

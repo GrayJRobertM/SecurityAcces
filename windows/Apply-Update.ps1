@@ -76,9 +76,16 @@ try {
     if($lease){$lease.Dispose()}
 }
 if($success){
-    $launch=Start-Process -FilePath (Join-Path $root 'MetakampoAccess.exe') -ArgumentList '--shared-host' -PassThru
-    $script:restartedPid=$launch.Id
-    Write-Result 'success' 'Actualización instalada y comprobada; servidor reabierto con la misma cuenta Windows.'
+    if($planData.service_host -eq $true){
+        if((Get-Service MetakampoAccess).Status -ne 'Running'){Start-Service -Name MetakampoAccess}
+        (Get-Service MetakampoAccess).WaitForStatus('Running',[TimeSpan]::FromSeconds(90))
+        $script:restartedPid=(Get-CimInstance Win32_Service -Filter "Name='MetakampoAccess'").ProcessId
+        Write-Result 'success' 'Actualización instalada y comprobada; servicio Metakampo iniciado.'
+    } else {
+        $launch=Start-Process -FilePath (Join-Path $root 'MetakampoAccess.exe') -ArgumentList $(if($planData.legacy_pilot){'--legacy-host'}else{'--shared-host'}) -PassThru
+        $script:restartedPid=$launch.Id
+        Write-Result 'success' 'Actualización instalada y comprobada; servidor reabierto con la misma cuenta Windows.'
+    }
     exit 0
 }
 exit 1

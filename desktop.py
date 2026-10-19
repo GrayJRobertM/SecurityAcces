@@ -223,9 +223,13 @@ def setup_application(store, gate, on_ready):
     return app
 
 
-def main():
+def main(arguments=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--shared-host', action='store_true')
+    parser.add_argument('--legacy-host', action='store_true')
+    parser.add_argument('--activate-after-setup', action='store_true')
+    for flag in ('service','enable-service','repair-service','stop-service','remove-service'):
+        parser.add_argument('--'+flag,action='store_true')
     parser.add_argument('--shared-smoke-host', action='store_true')
     parser.add_argument('--configure', action='store_true')
     parser.add_argument('--self-test', action='store_true')
@@ -233,7 +237,15 @@ def main():
         parser.add_argument('--'+flag,action='store_true')
     parser.add_argument('--gui-smoke-test', action='store_true')
     parser.add_argument('--gui-smoke-report', default='gui-smoke-report.txt')
-    args = parser.parse_args()
+    args = parser.parse_args(arguments)
+    if any(getattr(args,x) for x in ('service','enable_service','repair_service','stop_service','remove_service')):
+        from service_host import dispatch,activate,repair,stop,remove
+        if args.service:dispatch()
+        elif args.enable_service:activate()
+        elif args.repair_service:repair()
+        elif args.stop_service:stop()
+        else:remove()
+        return
     if any(getattr(args,x) for x in ('protection_worker','install_protection','stop_protection','remove_protection')):
         from background_protection import worker,install_task,stop_worker,remove_task
         if args.protection_worker:worker()
@@ -284,11 +296,23 @@ def main():
         installation_type=winreg.QueryValueEx(key,'InstallationType')[0]
     if installation_type != 'Server':
         raise OSError('Se requiere Windows Server con experiencia de escritorio.')
+    if not any((args.legacy_host,args.shared_smoke_host,args.gui_smoke_test,args.configure)):
+        from service_host import activate
+        activate(launch=True)
+        return
+    configured_service=None
+    if args.configure and not args.gui_smoke_test:
+        from service_host import binding,stop
+        configured_service=binding()
+        if configured_service:
+            from windows_native import current_sid
+            if current_sid()!=configured_service['sid']:raise OSError('Configura con la cuenta Windows propietaria original.')
+            stop()
     import webview
     from waitress import create_server
     from local_telemetry import LocalCollector
     temporary = tempfile.TemporaryDirectory(prefix='fk-gui-smoke-') if (args.gui_smoke_test or args.shared_smoke_host) else None
-    folder = Path(temporary.name) if temporary else Path(os.environ['LOCALAPPDATA']) / 'Freshkampo' / 'Access'
+    folder = Path(temporary.name) if temporary else Path(configured_service['folder']) if configured_service else Path(os.environ['LOCALAPPDATA']) / 'Freshkampo' / 'Access'
     store = Store(folder)
     from updater import UpdateManager
     updater=UpdateManager(folder,root=Path(sys.executable).parent if getattr(sys,'frozen',False) and not temporary else None)
@@ -304,10 +328,15 @@ def main():
     except OSError:
         raise OSError('Metakampo Access ya está abierto en esta cuenta Windows.')
     collectors = []
+    configured_ready=threading.Event()
     def ready(app):
         for old in collectors:
             old.stop()
         collectors.clear()
+        if args.activate_after_setup:
+            configured_ready.set()
+            window.destroy()
+            return
         if app.config['MODE'] in ('ad','local'):
             if not app.ip_protection.autonomous:
                 collectors.append(app.ip_protection)
@@ -327,7 +356,7 @@ def main():
     else:
         gate.application = setup_application(store, gate, ready)
     shared=None
-    if args.shared_host or args.shared_smoke_host:
+    if args.legacy_host or args.shared_smoke_host:
         from shared_desktop import PipeServer
         shared=PipeServer(lambda:gate.application if store.values else None)
         shared.start()
@@ -339,7 +368,7 @@ def main():
     thread.start()
     webview.settings.update(ALLOW_DOWNLOADS=True, ALLOW_FILE_URLS=False,
                             OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
-    window = webview.create_window('Metakampo Access · '+('Servidor compartido — mantener abierto' if shared else 'Este servidor'), url=url,
+    window = webview.create_window('Metakampo Access · '+('Recuperación — mantener abierto' if shared else 'Configuración del servidor'), url=url,
                                   width=1360, height=900, min_size=(900, 650), text_select=True)
     def prepare_update():
         import time
@@ -390,11 +419,19 @@ def main():
         updater.stop_auto()
         for collector in collectors:
             collector.stop()
+        for collector in collectors:
+            collector.thread.join(65)
         if shared:shared.stop()
         server.close()
         lockfile.close()
         if temporary:
             temporary.cleanup()
+    if configured_service:
+        from service_host import start
+        start()
+    if args.activate_after_setup and configured_ready.is_set():
+        from service_host import activate
+        activate()
     if smoke_errors:
         raise RuntimeError(smoke_errors[0])
 
@@ -403,11 +440,12 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as exc:
-        if any(x in sys.argv for x in ('--protection-worker','--install-protection','--stop-protection','--remove-protection')):
+        if any(x in sys.argv for x in ('--protection-worker','--install-protection','--stop-protection','--remove-protection','--service','--repair-service','--stop-service','--remove-service')):
             raise SystemExit(1)
         if '--self-test' in sys.argv or '--gui-smoke-test' in sys.argv:
             raise
         if os.name == 'nt':
             ctypes.windll.user32.MessageBoxW(None, str(exc), 'Metakampo Access · No se pudo iniciar', 16)
+            raise SystemExit(1)
         else:
             raise
