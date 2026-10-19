@@ -109,15 +109,12 @@ try:
     result=subprocess.run([str(installer),'/VERYSILENT','/SUPPRESSMSGBOXES','/SP-','/NORESTART','/DIR='+str(exe.parent)],timeout=240)
     assert result.returncode==0
     cookie,csrf=login();assert status()=='running' and protected_bytes()==protected
-    # Verify original vault material after cold SCM restart, not an interactive host.
-    token=win32security.LogonUser(username,'.',password,win32security.LOGON32_LOGON_INTERACTIVE,win32security.LOGON32_PROVIDER_DEFAULT)
-    profile=win32profile.LoadUserProfile(token,dict(UserName=username,Flags=1));win32security.ImpersonateLoggedOnUser(token)
-    try:
-        reopened=Store(folder);assert reopened.values['key']==key
-        from security import unseal
-        with connection(app.db_path) as db:assert unseal(base64.b64decode(key),identifier,db.execute('SELECT secret FROM vault WHERE id=?',(identifier,)).fetchone()[0])==secret
-    finally:win32security.RevertToSelf()
-    report.write_text('Real Windows SCM automatic service runs in session 0 under the original isolated owner account. CurrentUser DPAPI configuration, key, administrator login and vault ciphertext survive service activation, stop/start and installer repair without any owner GUI or interactive owner process. LocalCollector and AccountExpiry run as service workers. No real domain or Telegram used.\n')
+    # Read the vault through the authenticated service API, the real product boundary.
+    # An interactive filtered token must not open a live service SQLite database directly.
+    response,body=request('POST','/api/vault/'+identifier+'/reveal',dict(password=admin_password),cookie=cookie,csrf=csrf)
+    assert response['status']==200 and body.get('password')==secret, 'Original vault secret not preserved'
+    assert protected_bytes()==protected
+    report.write_text('Real Windows SCM automatic service runs in session 0 under the original isolated owner account. CurrentUser DPAPI configuration, key, administrator login and vault secret survive service activation, stop/start and installer repair without any owner GUI or interactive owner process. LocalCollector and AccountExpiry run as service workers. No real domain or Telegram used.\n')
 finally:
     try:remove()
     except Exception:pass
