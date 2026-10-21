@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import struct
 import threading
+import time
 from contextlib import contextmanager
 from ctypes import wintypes as W
 from werkzeug.test import Client
@@ -186,15 +187,28 @@ class PipeServer:
         self.thread.join(2)
 
 
+def connect_pipe(k, name):
+    # WaitNamedPipe does not reserve an instance. Parallel browser requests can
+    # win the same slot, so retry opening (never replay a request) on PIPE_BUSY.
+    deadline = time.monotonic() + 3
+    while True:
+        pipe = k.CreateFileW(name, CLIENT_RIGHTS, 0, None, 3, 0x120000, None)
+        if pipe != ctypes.c_void_p(-1).value:
+            return pipe
+        code = ctypes.get_last_error()
+        remaining = deadline - time.monotonic()
+        if code != 231 or remaining <= 0:
+            raise OSError('No se pudo conectar con el servicio local Metakampo. Código Windows '+str(code)+'. Revisa el estado del servicio y sus credenciales.')
+        k.WaitNamedPipeW(name, max(1, int(remaining * 1000)))
+
+
 class PipeClient:
     def __init__(self,expected_executable,name=PIPE_NAME):self.expected=Path(expected_executable);self.name=name
     def request(self,data):
         k,_=_native()
         # LOCAL pipe name is fixed by installed code, never accepted from a server/config file.
         if not self.name.startswith('\\\\.\\pipe\\'):raise OSError('Solo se permite comunicación en este servidor.')
-        k.WaitNamedPipeW(self.name,3000)
-        pipe=k.CreateFileW(self.name,CLIENT_RIGHTS,0,None,3,0x120000,None) # SQOS present + SecurityImpersonation.
-        if pipe==ctypes.c_void_p(-1).value:raise OSError('No se pudo conectar con el servicio local Metakampo. Código Windows '+str(ctypes.get_last_error())+'. Revisa el estado del servicio y sus credenciales.')
+        pipe=connect_pipe(k,self.name) # SQOS present + SecurityImpersonation.
         thread_handle=k.OpenThread(1,False,threading.get_native_id());timer=threading.Timer(90,lambda:k.CancelSynchronousIo(thread_handle));timer.daemon=True;timer.start()
         try:
             pid=W.ULONG();_check(k.GetNamedPipeServerProcessId(pipe,ctypes.byref(pid)))

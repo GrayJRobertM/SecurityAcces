@@ -1,10 +1,12 @@
 # Cambios
 
-## 1.10.1 — Estilos independientes de la configuración de Windows
+## 1.10.1 — Carga de estilos en sesiones compartidas
 
+- Reintenta abrir el canal local ocupado antes de enviar una solicitud, con plazo limitado y sin repetir operaciones enviadas; evita perder archivos durante cargas simultáneas.
 - Declara CSS y JavaScript con tipos propios, aunque las asociaciones MIME del servidor sean incorrectas; conserva nosniff.
 - Prueba de todos los CSS/scripts a través del canal compartido con asociaciones MIME incorrectas.
 - La prueba de ventana instalada verifica todas las hojas de estilo y su aplicación real.
+- Prueba nativa de 64 solicitudes concurrentes al canal local verificado.
 
 ## 1.10.0 — Servicio Windows y acceso único
 

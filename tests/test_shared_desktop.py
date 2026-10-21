@@ -8,12 +8,31 @@ import tempfile
 import unittest
 import uuid
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import Mock, patch
 from flask import Flask,jsonify,request
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
-from shared_desktop import bridge_request,LocalProxy,PipeServer,PipeClient,PIPE_SDDL,CLIENT_RIGHTS
+from shared_desktop import bridge_request,LocalProxy,PipeServer,PipeClient,PIPE_SDDL,CLIENT_RIGHTS,connect_pipe
 
 class BridgeTests(unittest.TestCase):
+    def test_busy_pipe_open_is_retried_but_access_denied_is_not(self):
+        import ctypes
+        invalid=ctypes.c_void_p(-1).value
+        kernel=Mock();kernel.CreateFileW.side_effect=[invalid,invalid,42]
+        with patch('shared_desktop.ctypes.get_last_error',return_value=231,create=True):
+            self.assertEqual(connect_pipe(kernel,'local-test'),42)
+        self.assertEqual(kernel.WaitNamedPipeW.call_count,2)
+        kernel=Mock();kernel.CreateFileW.return_value=invalid
+        with patch('shared_desktop.ctypes.get_last_error',return_value=5,create=True):
+            with self.assertRaisesRegex(OSError,'Código Windows 5'):
+                connect_pipe(kernel,'local-test')
+        kernel.WaitNamedPipeW.assert_not_called()
+        kernel=Mock();kernel.CreateFileW.return_value=invalid
+        with patch('shared_desktop.ctypes.get_last_error',return_value=231,create=True), patch('shared_desktop.time.monotonic',side_effect=[0,4]):
+            with self.assertRaisesRegex(OSError,'Código Windows 231'):
+                connect_pipe(kernel,'local-test')
+        kernel.WaitNamedPipeW.assert_not_called()
     def setUp(self):
         self.app=Flask(__name__)
         @self.app.route('/api/check',methods=['GET','POST'])
@@ -44,6 +63,19 @@ class NativeSharedTests(unittest.TestCase):
             return jsonify(ok=True,sid=sid)
         self.name=r'\\.\pipe\Metakampo.CI.'+uuid.uuid4().hex
         self.server=PipeServer(lambda:self.app,name=self.name);self.server.start();self.addCleanup(self.server.stop)
+    def test_parallel_browser_requests_all_reach_verified_pipe(self):
+        import time
+        create=self.server._create
+        def slow_listener(*args,**kwargs):
+            time.sleep(.01)
+            return create(*args,**kwargs)
+        self.server._create=slow_listener
+        def query(_):
+            return PipeClient(sys.executable,name=self.name).request(dict(method='GET',path='/api/check',headers={},body=''))
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results=list(pool.map(query,range(64)))
+        self.assertEqual(len(results),64)
+        self.assertTrue(all(r['status']==200 and json.loads(base64.b64decode(r['body']))['ok'] for r in results))
     def test_real_pipe_roundtrip_and_wrong_server_executable_rejected(self):
         from windows_native import current_sid
         result=PipeClient(sys.executable,name=self.name).request(dict(method='GET',path='/api/check',headers={},body=''))

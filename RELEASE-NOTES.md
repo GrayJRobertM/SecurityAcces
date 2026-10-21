@@ -1,4 +1,6 @@
-Metakampo Access 1.10.1 corrige la entrega de estilos cuando Windows tiene asociaciones MIME incorrectas para CSS o JavaScript. Conserva el diseño y los controles de seguridad existentes.
+Metakampo Access 1.10.1 corrige la carga de estilos en sesiones compartidas. Conserva el diseño y los controles de seguridad existentes.
+
+El cliente reintenta abrir el canal local cuando está ocupado por otras solicitudes simultáneas, dentro de un plazo limitado. El reintento se realiza antes de enviar una operación; no repite cambios ya enviados ni reduce la verificación del ejecutable, los permisos o la identidad del usuario. Una prueba nativa comprueba 64 solicitudes concurrentes.
 
 La aplicación declara los tipos de sus archivos CSS y JavaScript, sin modificar el registro de Windows ni desactivar nosniff. La prueba del cliente instalado comprueba que todas las hojas de estilo se apliquen dentro de WebView2, además de cargar el acceso.
 
