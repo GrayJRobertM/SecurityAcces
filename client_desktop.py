@@ -1,6 +1,7 @@
 """Unelevated window for an authorized Metakampo administrator in any local RDP session."""
 import argparse
 import ctypes
+import json
 import os
 from pathlib import Path
 import sys
@@ -46,16 +47,20 @@ def main():
     if args.gui_smoke_test:
         def check():
             try:
-                if not window.evaluate_js("!!document.getElementById('login-form') && !document.getElementById('login-screen').hidden"):raise RuntimeError('No se cargó el acceso compartido.')
-                styled = window.evaluate_js("""(() => {
+                Path(args.gui_smoke_report).write_text('Checking installed login and stylesheets.\n',encoding='utf-8')
+                details = window.evaluate_js("""(() => {
                     const sheets = [...document.querySelectorAll('link[rel="stylesheet"]')];
-                    return sheets.length >= 5 && sheets.every(link => {
-                        try { return link.sheet && link.sheet.cssRules.length > 0; }
-                        catch (_) { return false; }
-                    }) && getComputedStyle(document.documentElement).getPropertyValue('--fk-theme-primary').trim().length > 0
-                       && getComputedStyle(document.querySelector('.login-layout')).display === 'grid';
+                    return {login: !!document.getElementById('login-form') && !document.getElementById('login-screen').hidden,
+                        sheets: sheets.map(link => {
+                            try { return {path: link.getAttribute('href'), rules: link.sheet ? link.sheet.cssRules.length : 0}; }
+                            catch (_) { return {path: link.getAttribute('href'), rules: 0}; }
+                        }),
+                        theme: getComputedStyle(document.documentElement).getPropertyValue('--fk-theme-primary').trim(),
+                        display: getComputedStyle(document.querySelector('.login-layout')).display};
                 })()""")
-                if not styled:raise RuntimeError('No se aplicaron las hojas de estilo del acceso compartido.')
+                Path(args.gui_smoke_report).write_text(json.dumps(details,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+                if not details or not details['login']:raise RuntimeError('No se cargó el acceso compartido.')
+                if len(details['sheets']) < 5 or not all(s['rules'] > 0 for s in details['sheets']) or not details['theme'] or details['display'] != 'grid':raise RuntimeError('No se aplicaron las hojas de estilo del acceso compartido.')
                 Path(args.gui_smoke_report).write_text('Shared-session WebView2 login and all stylesheets applied through verified local named pipe.\n',encoding='utf-8')
             except Exception as exc:errors.append(str(exc))
             finally:window.destroy()
@@ -68,6 +73,6 @@ def main():
 if __name__=='__main__':
     try:main()
     except Exception as exc:
-        if '--gui-smoke-test' in sys.argv:raise
+        if '--gui-smoke-test' in sys.argv:raise SystemExit(1)
         if os.name=='nt':ctypes.windll.user32.MessageBoxW(None,str(exc),'Metakampo Access · Sesión compartida',16)
         else:raise
