@@ -23,6 +23,11 @@ class BridgeTests(unittest.TestCase):
         with patch('shared_desktop.ctypes.get_last_error',return_value=231,create=True):
             self.assertEqual(connect_pipe(kernel,'local-test'),42)
         self.assertEqual(kernel.WaitNamedPipeW.call_count,2)
+        kernel=Mock();kernel.CreateFileW.side_effect=[invalid,42]
+        with patch('shared_desktop.ctypes.get_last_error',return_value=2,create=True), patch('shared_desktop.time.sleep') as pause:
+            self.assertEqual(connect_pipe(kernel,'local-test'),42)
+        pause.assert_called_once()
+        kernel.WaitNamedPipeW.assert_not_called()
         kernel=Mock();kernel.CreateFileW.return_value=invalid
         with patch('shared_desktop.ctypes.get_last_error',return_value=5,create=True):
             with self.assertRaisesRegex(OSError,'Código Windows 5'):

@@ -197,9 +197,14 @@ def connect_pipe(k, name):
             return pipe
         code = ctypes.get_last_error()
         remaining = deadline - time.monotonic()
-        if code != 231 or remaining <= 0:
+        if code not in (2, 231) or remaining <= 0:
             raise OSError('No se pudo conectar con el servicio local Metakampo. Código Windows '+str(code)+'. Revisa el estado del servicio y sus credenciales.')
-        k.WaitNamedPipeW(name, max(1, int(remaining * 1000)))
+        if code == 2:
+            # The last connected instance can close before the next listener
+            # exists. WaitNamedPipe returns immediately while the name is absent.
+            time.sleep(min(.01, remaining))
+        else:
+            k.WaitNamedPipeW(name, max(1, int(remaining * 1000)))
 
 
 class PipeClient:
