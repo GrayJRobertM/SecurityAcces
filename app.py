@@ -161,6 +161,13 @@ def create_app(overrides=None):
 
     @app.after_request
     def headers(response):
+        # Windows MIME associations vary by server. Declare our browser assets
+        # explicitly so nosniff can stay enabled even with a broken registry map.
+        if request.endpoint == 'static' and response.status_code in (200, 206):
+            asset_type = {'.css': 'text/css', '.js': 'text/javascript'}.get(
+                Path((request.view_args or {}).get('filename', '')).suffix.lower())
+            if asset_type:
+                response.mimetype = asset_type
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'

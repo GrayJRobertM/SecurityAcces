@@ -1,5 +1,11 @@
 # Cambios
 
+## 1.10.1 — Estilos independientes de la configuración de Windows
+
+- Declara CSS y JavaScript con tipos propios, aunque las asociaciones MIME del servidor sean incorrectas; conserva nosniff.
+- Prueba de todos los CSS/scripts a través del canal compartido con asociaciones MIME incorrectas.
+- La prueba de ventana instalada verifica todas las hojas de estilo y su aplicación real.
+
 ## 1.10.0 — Servicio Windows y acceso único
 
 - Servicio automático bajo identidad propietaria original y perfil DPAPI CurrentUser conservado.

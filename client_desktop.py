@@ -47,7 +47,16 @@ def main():
         def check():
             try:
                 if not window.evaluate_js("!!document.getElementById('login-form') && !document.getElementById('login-screen').hidden"):raise RuntimeError('No se cargó el acceso compartido.')
-                Path(args.gui_smoke_report).write_text('Shared-session WebView2 login loaded through verified local named pipe.\n',encoding='utf-8')
+                styled = window.evaluate_js("""(() => {
+                    const sheets = [...document.querySelectorAll('link[rel="stylesheet"]')];
+                    return sheets.length >= 5 && sheets.every(link => {
+                        try { return link.sheet && link.sheet.cssRules.length > 0; }
+                        catch (_) { return false; }
+                    }) && getComputedStyle(document.documentElement).getPropertyValue('--fk-theme-primary').trim().length > 0
+                       && getComputedStyle(document.querySelector('.login-layout')).display === 'grid';
+                })()""")
+                if not styled:raise RuntimeError('No se aplicaron las hojas de estilo del acceso compartido.')
+                Path(args.gui_smoke_report).write_text('Shared-session WebView2 login and all stylesheets applied through verified local named pipe.\n',encoding='utf-8')
             except Exception as exc:errors.append(str(exc))
             finally:window.destroy()
         window.events.loaded+=check
